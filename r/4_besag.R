@@ -37,6 +37,7 @@ data <- data[order,]
 data$NAME == london.gen$NAME
 
 ### ----- 2.1. Plotting the data --- ####
+### ------- 2.1.1. SMR --- ####
 london.gen$SMR_raw <- data$y/data$E 
 SMR_raw.cutoff<- c(0.6, 0.9, 1.0, 1.1,  1.8)
 SMR_raw_disc = cut(london.gen$SMR_raw,
@@ -54,6 +55,33 @@ spplot(london.gen,
          list(axis.line = list(col =  'transparent')))
 
 #dev.off()
+
+### ------- 2.1.2. Covariates --- ####
+# Covariates
+london.gen$x1 <- data$x1
+london.gen$x2 <- data$x2
+
+png("images/covs_besag.png", width = 1200, height = 800, res = 150)
+grid.arrange(
+  spplot(london.gen, c("x1"),
+         main = c("index of social deprivation"),
+         #col.regions = rev(viridis_pal(option = "B")(101)),
+         col.regions = colorRampPalette(brewer.pal(9,'Reds'))(101),
+         cuts        = 100,
+         colorkey=list(space="bottom", space = "bottom"),
+         par.settings =
+           list(axis.line = list(col =  'transparent',
+                                 legend.ticks = 'black'))),
+  spplot(london.gen, c("x2"),
+         main = c("index of social fragmentation"),
+         col.regions = colorRampPalette(brewer.pal(9,'Reds'))(101),
+         cuts        = 100,
+         colorkey=list(space="bottom", space = "bottom"),
+         par.settings =
+           list(axis.line = list(col =  'transparent',
+                                 legend.ticks = 'black'))),
+  ncol = 2)
+dev.off()
 
          
          
@@ -80,10 +108,12 @@ plot_map_neig <- function(neig)
   plot(london.gen[temp[[neig]], ], 
        border="white", 
        col="pink", add=TRUE)
+  cat("You have selected", london.gen$NAME[neig], "and its neighbours are:", "\n")
   london.gen[temp[[neig]],]$NAME
 }
 
 plot_map_neig(30)
+plot_map_neig(25)
 
 ### --- 4. Fitting a model with bym effect --- ####
 ### ----- 4.0. Adding ids for the random effects --- ####
