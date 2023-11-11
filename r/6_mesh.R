@@ -15,6 +15,7 @@ str(data)
 
 ### --- 2. Creating some meshes --- ####
 coords <- as.matrix(data[,c("lon","lat")])
+plot(coords)
 
 ### ----- 2.1. MESH 1 --- ####
 ### use data coordinates as starting points for mesh

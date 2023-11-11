@@ -61,16 +61,13 @@ mod.seeds = inla(formula,
                  family          = "binomial", 
                  Ntrials         = n, 
                  control.compute = list(dic  = TRUE, 
-                                        waic = TRUE, 
-                                        cpo  = TRUE))
+                                        waic = TRUE))
 summary(mod.seeds)
 
 
 ### --- 3. Best model --- ####
 selection <- data.frame(DIC = c(mod1.seeds$dic$dic, mod2.seeds$dic$dic, mod.seeds$dic$dic),
-                      WAIc=c(mod1.seeds$waic$waic, mod2.seeds$waic$waic, mod.seeds$waic$waic),
-                      LCPO=c(-mean(log(mod1.seeds$cpo$cpo)), 
-                             -mean(mod2.seeds$cpo$cpo), - mean(log(mod.seeds$cpo$cpo))))
+                      WAIc=c(mod1.seeds$waic$waic, mod2.seeds$waic$waic, mod.seeds$waic$waic))
 rownames(selection)<-c("mod1.seeds", "mod2.seeds", "mod.seeds")
 selection
 

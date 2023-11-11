@@ -1,8 +1,7 @@
 #' 
 
 ### --- 0. Loading the packages --- ####
-library(maptools)
-library(rgdal)
+library(sf)
 library(spdep)
 library(lattice)
 library(latticeExtra)
@@ -10,6 +9,8 @@ library(viridis)
 library(gridExtra)
 library(RColorBrewer)
 library(INLA)
+library(sf)
+library(ggthemes)
 
 #BiocManager::install(c("graph", "Rgraphviz"), dep=TRUE)
 library(Rgraphviz)
@@ -22,7 +23,7 @@ data <- readRDS("data/london_suic/london_suicides.RDS")
 Nareas <- length(data[,1])
 
 #Spatial polygon data frame
-london.gen <- readOGR("data/london_suic", "LDNSuicides")
+london.gen <- read_sf("data/london_suic", "LDNSuicides")
 
 
 ### --- 2. Checking if the data of the sp and the data.frame match --- ####
@@ -32,7 +33,7 @@ london.gen <- readOGR("data/london_suic", "LDNSuicides")
 data$NAME == london.gen$NAME #Not the same
 boroughs <- london.gen
 data.boroughs <- attr(boroughs, "data")
-order <- match(data.boroughs$NAME,data$NAME)
+order <- match(boroughs$NAME, data$NAME)
 data <- data[order,]
 data$NAME == london.gen$NAME
 
@@ -46,45 +47,23 @@ SMR_raw_disc = cut(london.gen$SMR_raw,
 
 london.gen$SMR_raw_disc <- SMR_raw_disc
 
-#png("images/SMR_raw.png", width = 1000, height = 800, res = 150)
-spplot(london.gen,
-       c("SMR_raw_disc"),
-       col.regions = brewer.pal(9,'Blues')[c(2,4,6,8)],
-       main        = "SMR raw",
-       par.settings =
-         list(axis.line = list(col =  'transparent')))
-
-#dev.off()
+plot(london.gen["SMR_raw_disc"], max.plot = 1,
+     pal =  brewer.pal(9,'Blues')[c(2,4,6,8)],
+     key.pos = 1)
 
 ### ------- 2.1.2. Covariates --- ####
 # Covariates
 london.gen$x1 <- data$x1
 london.gen$x2 <- data$x2
 
-png("images/covs_besag.png", width = 1200, height = 800, res = 150)
-grid.arrange(
-  spplot(london.gen, c("x1"),
-         main = c("index of social deprivation"),
-         #col.regions = rev(viridis_pal(option = "B")(101)),
-         col.regions = colorRampPalette(brewer.pal(9,'Reds'))(101),
-         cuts        = 100,
-         colorkey=list(space="bottom", space = "bottom"),
-         par.settings =
-           list(axis.line = list(col =  'transparent',
-                                 legend.ticks = 'black'))),
-  spplot(london.gen, c("x2"),
-         main = c("index of social fragmentation"),
-         col.regions = colorRampPalette(brewer.pal(9,'Reds'))(101),
-         cuts        = 100,
-         colorkey=list(space="bottom", space = "bottom"),
-         par.settings =
-           list(axis.line = list(col =  'transparent',
-                                 legend.ticks = 'black'))),
-  ncol = 2)
-dev.off()
 
-         
-         
+plot(london.gen[c("x1")], max.plot = 1,
+     key.pos = 1)
+
+plot(london.gen[c("x2")], max.plot = 1,
+     key.pos = 1)
+
+
 ### --- 3. Defining neighbor relation --- ####
 temp <- poly2nb(london.gen)
 
@@ -99,21 +78,26 @@ image(inla.graph2matrix(H),xlab="",ylab="")
 plot(H)
 
 ### ----- 3.3. Plotting the neighbors --- ####
-plot_map_neig <- function(neig)
-{
-  plot(london.gen)
-  plot(london.gen[neig, ], border="white", 
-       col="red", add=TRUE)
+plot_map_neig <- function(neig, london.gen) {
   
-  plot(london.gen[temp[[neig]], ], 
-       border="white", 
-       col="pink", add=TRUE)
-  cat("You have selected", london.gen$NAME[neig], "and its neighbours are:", "\n")
-  london.gen[temp[[neig]],]$NAME
+  # Plot the base map
+  plot(st_geometry(london.gen), col = "white")
+  
+  # Highlight the selected region in red
+  plot(st_geometry(london.gen[neig, ]), col = "red", add = TRUE)
+  
+  # Highlight neighbors in pink
+  neighbors <- st_geometry(london.gen[temp[[neig]], ])
+  plot(neighbors, col = "pink", add = TRUE)
+  
+  # Print information about the selected region and its neighbors
+  cat("You have selected", london.gen$NAME[neig], "and its neighbors are:", "\n")
+  cat(london.gen$NAME[temp[[neig]]], "\n")
 }
 
-plot_map_neig(30)
-plot_map_neig(25)
+plot_map_neig(neig = 30, london.gen)
+plot_map_neig(neig = 25, london.gen)
+
 
 ### --- 4. Fitting a model with bym effect --- ####
 ### ----- 4.0. Adding ids for the random effects --- ####
@@ -133,6 +117,7 @@ formula <- y ~ 1 + f(S,
     hyper       = 
       list(prec = list(prior="loggamma",param = c(1,0.001))))
 
+
 ### ----- 4.2. Model --- ####
 mod.suicides <- inla(formula,
                      family          = "poisson",
@@ -148,28 +133,33 @@ summary(mod.suicides)
 london.gen$SPmean <- round(mod.suicides$summary.random$S[["mean"]], 4)
 london.gen$SPsd <- round(mod.suicides$summary.random$S[["sd"]],5)
 
-#png("images/random_effect_spatial_bym.png", width = 1500, height = 700, 
-#    res = 100)
-grid.arrange(
-  spplot(london.gen, c("SPmean"),
-         main = c("Mean posterior of S"),
-         #col.regions = rev(viridis_pal(option = "B")(101)),
-         col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
-         cuts        = 100,
-         colorkey=list(space="bottom", space = "bottom"),
-         par.settings =
-           list(axis.line = list(col =  'transparent',
-                                 legend.ticks = 'black'))),
-  spplot(london.gen, c("SPsd"),
-         main = c("Sd posterior of S"),
-         col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
-         cuts        = 100,
-         colorkey=list(space="bottom", space = "bottom"),
-         par.settings =
-           list(axis.line = list(col =  'transparent',
-                                 legend.ticks = 'black'))),
-  ncol = 2)
-#dev.off()
+#Mean posterior distribution
+ggplot(data = london.gen) +
+  geom_sf(aes(fill = SPmean), color = "white") +
+  theme_map() +
+  theme(legend.position="bottom",
+        plot.title = element_text(hjust = 0.5,
+                                  color = "Gray40",
+                                  size = 16,
+                                  face = "bold"),
+        legend.title = element_blank(),
+        plot.subtitle = element_text(color = "blue"),
+        plot.caption = element_text(color = "Gray60")) +
+  ggtitle("Mean posterior of S") 
+  
+#Sd posterior distribution
+ggplot(data = london.gen) +
+  geom_sf(aes(fill = SPsd), color = "white") +
+  theme_map() +
+  theme(legend.position="bottom",
+        plot.title = element_text(hjust = 0.5,
+                                  color = "Gray40",
+                                  size = 16,
+                                  face = "bold"),
+        legend.title = element_blank(),
+        plot.subtitle = element_text(color = "blue"),
+        plot.caption = element_text(color = "Gray60")) +
+  ggtitle("Mean posterior of S") 
 
 ### --- 4.4. Posterior distribution of suicides mortality --- ####
 london.gen$SMR_mean <- mod.suicides$summary.fitted.values$mean # mean
@@ -177,34 +167,13 @@ london.gen$SMR_sd <- mod.suicides$summary.fitted.values$sd #s
 london.gen$SMR_median <- mod.suicides$summary.fitted.values$`0.5quant` # median
 london.gen$SMR_q025 <- mod.suicides$summary.fitted.values$`0.025quant` # quantile
 london.gen$SMR_q975 <- mod.suicides$summary.fitted.values$`0.975quant` # quantile
-london.gen$SMR_p1 <- 1 - mod.suicides$summary.fitted.values$`1 cdf` # probability to be greater than 1
-
-#png("images/SMR_bym.png", width = 1500, height = 600, 
-#    res = 100)
-grid.arrange(spplot(london.gen,
-                    c("SMR_mean"),
-                    col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
-                    cuts         = 100,
-                    main        = "SMR mean ",
-                    colorkey=list(space="bottom"),
-                    par.settings =
-                      list(axis.line = list(col =  'transparent'))),
-             spplot(london.gen,
-                    c("SMR_sd"),
-                    col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
-                    cuts         = 100,
-                    main        = "SMR sd ",
-                    colorkey=list(space="bottom"),
-                    par.settings =
-                      list(axis.line = list(col =  'transparent'))), ncol = 2)
-             
-#dev.off()
+london.gen$SMR_p1 <- 1 - mod.suicides$summary.fitted.values$`1cdf` # probability to be greater than 1
 
 
 ### --- 4.5. Posterior distribution of suicides SMR with cutoff--- ####
 ## Also, the probability for SMR to be greater than 1.
 SMR.cutoff<- c(0.6, 0.9, 1.0, 1.1,  1.8)
-SMR_p1.cutoff <- c(0,0.2,0.8,1)
+SMR_p1.cutoff <- c(0,0.2,0.6, 0.8,1)
 
 SMR_disc = cut(london.gen$SMR_mean,
                breaks         = SMR.cutoff,
@@ -218,21 +187,15 @@ SMR_p1_disc = cut(london.gen$SMR_p1,
 london.gen$SMR_disc <- SMR_disc
 london.gen$SMR_p1_disc <- SMR_p1_disc
 
-#png("images/SMR_bym_disc.png", width = 1500, height = 600, res = 150)
-grid.arrange(spplot(london.gen,
-                    c("SMR_disc"),
-                    col.regions = brewer.pal(9,'Blues')[c(2,4,6,8)],
-                    main        = "SMR ",
-                    par.settings =
-                      list(axis.line = list(col =  'transparent'))),
-             spplot(london.gen,
-                    c("SMR_p1_disc"),
-                    col.regions = brewer.pal(9,'Blues')[c(3,6,9)],
-                    main        = "p(SMR > 1) ",
-                    par.settings =
-                      list(axis.line = list(col =  'transparent'))), ncol = 2)
+plot(london.gen["SMR_disc"],
+     pal = brewer.pal(9,'Blues')[c(2,4,6,8)],
+     main = "Fitted SMR")
 
-#dev.off()
+plot(london.gen["SMR_p1_disc"],
+     pal = brewer.pal(9,'Blues')[c(2,4,6,8)],
+     main = "p(SMR>1)")
+
+           
 
 ### --- 5. Excercise --- ###
 #Now, add the covariates (deprivation - x1 and social fragmentation - x2) and 

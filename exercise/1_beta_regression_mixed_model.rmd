@@ -84,8 +84,69 @@ head(data)
 
 # Fit different models with fixed or random effect and select the best one
 
+```{r}
+formula1  <- y ~ 1 + dd
+mod1 <- inla(formula1,
+             family = "beta",
+             data = data,
+              control.compute = list(dic  = TRUE, 
+                                     waic = TRUE, 
+                                     cpo  = TRUE))
+
+summary(mod1)
+dic1 <- mod1$dic$dic
+waic1 <- mod1$waic$waic
+lcpo1 <- -mean(log(mod1$cpo$cpo))
+```
+
+```{r}
+  formula2 <- y ~1
+  mod2 <- inla(formula2,
+             family = "beta",
+             data = data,
+              control.compute = list(dic  = TRUE, 
+                                     waic = TRUE, 
+                                     cpo  = TRUE))
+  dic2  <- mod2$dic$dic
+  waic2 <- mod2$waic$waic
+  lcpo2 <- -mean(log(mod2$cpo$cpo))
+
+  
+```
 
 
+```{r}
+data$year
+data$year_ind <- as.numeric(data$year)
+table(data$year_ind)
+formula3 <- y ~ 1 + dd + f(year_ind,
+                           model = "iid")
+mod3 <- inla(formula3,
+             family = "beta",
+             data = data,
+              control.compute = list(dic  = TRUE, 
+                                     waic = TRUE, 
+                                     cpo  = TRUE))
+
+
+#summary(mod3)
+  dic3  <- mod3$dic$dic
+  waic3 <- mod3$waic$waic
+  lcpo3 <- -mean(log(mod3$cpo$cpo))
+
+
+```
+
+
+```{r}
+
+models <-  data.frame(dic = c(dic1, dic2, dic3),
+             waic = c(waic1, waic2, waic3),
+             lcpo = c(lcpo1, lcpo2, lcpo3))
+
+rownames(models) <- paste0("model1", c(1:3))
+models
+``` 
 
 # Best model {.tabset} 
 

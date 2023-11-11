@@ -7,7 +7,7 @@ library(INLA)
 ### -  Bayesian estimation of the parameters of a simple linear regression --- ###
 ### --- 1. Generating the data --- ####
 set.seed(100) #Fix the seed
-n <- 100 #Number of data
+n <- 10000 #Number of data
 sigma <- 0.1 #standard deviation
 beta.0 <- 2 #Parameter
 beta.1 <- 0.5 #Parameter
@@ -29,14 +29,31 @@ plot(data$x, data$y)
 
 head(data)
 
-### --- 2. Defining the formula and fitting the model --- ####
+
 formula <- y ~ 1 + x # 1 is refered to the intercept term
 
 ### --- Call inla for the estimation --- ###
 model1 <- inla(formula, 
                family       = 'gaussian', 
                data         = data,
-               control.inla = list(strategy = 'simplified.laplace'))
+               control.fixed = list(mean = 0, prec = 1,
+                                    mean.intercept = 0, prec.intercept = 0.0001))
+
+
+summary(model1)
+
+
+
+
+
+### --- 2. Defining the formula and fitting the model --- ####
+formula <- y ~ 1 + x # 1 is refered to the intercept term
+
+### --- Call inla for the estimation --- ###
+model1 <- inla(formula, 
+               family       = 'gaussian', 
+               data         = data)
+summary(model1)
 
 
 ### --- 3. Obtaining posterior distribution of the fixed effects --- ####

@@ -18,7 +18,6 @@ library(plotKML)
 
 ### --- spatial objects --- ###
 library(raster)
-library(rgdal)
 library(sp)
 
 ### --- colors --- ####
@@ -136,7 +135,7 @@ model.est <- inla(formula.1,
                   control.fixed     = list(prec.intercept = 1),
                   #control.inla=list(strategy = "laplace"),
                   num.threads       = 2,
-                  verbose           = FALSE)
+                  verbose           = TRUE)
 
 
 saveRDS(model.est, "rds/model_est_gal.rds")
@@ -161,7 +160,7 @@ bbox(galicia_sp)
 (dxy <- apply(bbox(galicia_sp),1, diff))
 (r <- dxy[1]/dxy[2])
 
-m <- 50
+m <- 200
 #m <- 50
 
 proj.grid.mat <- 
@@ -230,6 +229,8 @@ plot(galicia_sp, add = TRUE)
 ### --- 8. Prediction --- ####
 ### --- Read the raster to predict --- ###
 temperature <- raster("data/galicia_fasc/temperaturas_utm2")
+plot(temperature)
+
 
 #png("images/temperature.png", width = 1000, height = 700, res = 120)
 par(mar=c(0,0,0,0))
@@ -260,24 +261,24 @@ stk <- inla.stack(stk.est, stk.pred)
 
 
 #### --- model --- ###
-model.pred <- inla(formula.1, 
-                   data = inla.stack.data(stk), 
-                   family="binomial",
-                   control.predictor = list(A       = inla.stack.A(stk), 
-                                            compute = TRUE, 
-                                            link    = 1), #link:link is a vector of
-                   #length given by the size of the response variable with values 1 if the corresponding
-                   #data is missing and NA otherwise
-                   control.inla      = list(strategy = "simplified.laplace"), # Strategy
-                   control.mode      = list(theta = model.est$mode$theta, 
-                                            restart = TRUE), #Mode 
-                   # control.results   = list(return.marginals.random = FALSE,
-                   #                    return.marginals.predictor  = FALSE), # Avoid some marginals
-                   control.fixed     = list(prec.intercept = 1),
-                   num.threads       = 4,
-                   verbose  = TRUE)
+# model.pred <- inla(formula.1, 
+#                    data = inla.stack.data(stk), 
+#                    family="binomial",
+#                    control.predictor = list(A       = inla.stack.A(stk), 
+#                                             compute = TRUE, 
+#                                             link    = 1), #link:link is a vector of
+#                    #length given by the size of the response variable with values 1 if the corresponding
+#                    #data is missing and NA otherwise
+#                    control.inla      = list(strategy = "simplified.laplace"), # Strategy
+#                    control.mode      = list(theta = model.est$mode$theta, 
+#                                             restart = TRUE), #Mode 
+#                    # control.results   = list(return.marginals.random = FALSE,
+#                    #                    return.marginals.predictor  = FALSE), # Avoid some marginals
+#                    control.fixed     = list(prec.intercept = 1),
+#                    num.threads       = 4,
+#                    verbose  = TRUE)
 
-saveRDS(model.pred, "rds/model_pred_galicia2.rds")
+#saveRDS(model.pred, "rds/model_pred_galicia2.rds")
 model.pred <- readRDS("rds/model_pred_galicia2.rds")
 
 ### index for the prediction data
@@ -311,7 +312,7 @@ prob.sd.r <- matrix_to_raster(prob.sd, proj.grid.mat = proj.grid.mat)
 
 ### --- Plotting --- ####
 
-png("images/predictive_effect.png", width = 1000, height = 500, res = 90)
+#png("images/predictive_effect.png", width = 1000, height = 500, res = 90)
 
 par(mfrow=c(1,2))
 # image.plot(mean.g)
@@ -333,7 +334,7 @@ plot(prob.sd.r, col = rev(viridis_pal(option = "D")(200)),
      legend.width  = 3, 
      legend.shrink = 0.7)
 plot(galicia_sp, add = TRUE)
-dev.off()
+#dev.off()
 
 
 ### --- plot in google earth --- ###
