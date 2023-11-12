@@ -29,7 +29,7 @@ To take full advantage of the course, it is necessary that everyone has the foll
 This will be the packages required for the course
 
 ```r
-install.packages(pkgs = c("ggplot2", "gridExtra", "maptools", "rgdal", "spdep", "lattice", "latticeExtra", "viridis", "splancs", "lattice", "fields", "plotKML", "raster", "sp"))
+install.packages(pkgs = c("ggplot2", "gridExtra", "maptools", "sf", "spdep", "lattice", "latticeExtra", "viridis", "splancs", "terra", "lattice", "fields", "plotKML", "raster", "sp"))
 
 ```
 
@@ -44,3 +44,4 @@ Also, other packages from Bioconductor
 ```r
 BiocManager::install(c("graph", "Rgraphviz"), dep=TRUE)
 ```
+
