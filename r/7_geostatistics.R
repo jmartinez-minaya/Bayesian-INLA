@@ -10,15 +10,19 @@
 ### --- Bayesian inference --- ###
 library(INLA)
 library(splancs)
+library(fmesher)
 
 ### --- maps --- ###
 library(lattice)
 library(fields)
-library(plotKML)
 
 ### --- spatial objects --- ###
 library(raster)
 library(sp)
+library(terra)
+
+### --- dealing with data --- ####
+library(dplyr)
 
 ### --- colors --- ####
 library(viridis)
@@ -42,6 +46,7 @@ galicia <- read.table("data/galicia_fasc/data_galicia2.txt",
 
 ### --- Cartography of Galicia --- ###
 galicia_sp <- readRDS("data/galicia_fasc/galicia_sp.rds")
+
 plot(galicia_sp, border="blue")
 
 ### --- plot data --- ###
@@ -61,12 +66,14 @@ legend("topleft", legend=c("Absence", "Presence"),
 borinla <- inla.sp2segment(galicia_sp)
 
 ### --- mesh --- ###
-mesh <- inla.mesh.2d(boundary  = borinla,  
+
+mesh <- fmesher::fm_mesh_2d_inla(boundary  = borinla,  
                      max.edge  = c(10000, 20000),
                      cutoff    = 5000, 
                      min.angle = 30,
-                     offset    = c(-0.9, -0.25))
+                     offset = c(10000, 60000))
 
+plot(mesh)
 ### --- Plot the mesh --- ###
 #png("images/mesh.png", width = 1000, height = 1000, res = 100)
 par(mar=c(0,0,0,0))
@@ -107,7 +114,6 @@ spde <- inla.spde2.pcmatern(
 
 
 
-
 ### --- 4. Matrix which link data with the mesh. The projector matrix --- ####
 A.est <- inla.spde.make.A(mesh, loc = cbind(galicia$X, galicia$Y))
 
@@ -135,7 +141,7 @@ model.est <- inla(formula.1,
                   control.fixed     = list(prec.intercept = 1),
                   #control.inla=list(strategy = "laplace"),
                   num.threads       = 2,
-                  verbose           = TRUE)
+                  verbose           = FALSE)
 
 
 saveRDS(model.est, "rds/model_est_gal.rds")
@@ -261,22 +267,21 @@ stk <- inla.stack(stk.est, stk.pred)
 
 
 #### --- model --- ###
-# model.pred <- inla(formula.1, 
-#                    data = inla.stack.data(stk), 
-#                    family="binomial",
-#                    control.predictor = list(A       = inla.stack.A(stk), 
-#                                             compute = TRUE, 
-#                                             link    = 1), #link:link is a vector of
-#                    #length given by the size of the response variable with values 1 if the corresponding
-#                    #data is missing and NA otherwise
-#                    control.inla      = list(strategy = "simplified.laplace"), # Strategy
-#                    control.mode      = list(theta = model.est$mode$theta, 
-#                                             restart = TRUE), #Mode 
-#                    # control.results   = list(return.marginals.random = FALSE,
-#                    #                    return.marginals.predictor  = FALSE), # Avoid some marginals
-#                    control.fixed     = list(prec.intercept = 1),
-#                    num.threads       = 4,
-#                    verbose  = TRUE)
+model.pred <- inla(formula.1,
+                   data = inla.stack.data(stk),
+                   family="binomial",
+                   control.predictor = list(A       = inla.stack.A(stk),
+                                            compute = TRUE,
+                                            link    = 1), #link:link is a vector of
+                   #length given by the size of the response variable with values 1 if the corresponding
+                   #data is missing and NA otherwise
+                   control.mode      = list(theta = model.est$mode$theta,
+                                            restart = TRUE), #Mode
+                   # control.results   = list(return.marginals.random = FALSE,
+                   #                    return.marginals.predictor  = FALSE), # Avoid some marginals
+                   control.fixed     = list(prec.intercept = 1),
+                   num.threads       = 4,
+                   verbose  = TRUE)
 
 #saveRDS(model.pred, "rds/model_pred_galicia2.rds")
 model.pred <- readRDS("rds/model_pred_galicia2.rds")
@@ -338,14 +343,21 @@ plot(galicia_sp, add = TRUE)
 
 
 ### --- plot in google earth --- ###
-prob.mean.sg <- as(prob.mean.r, "SpatialGridDataFrame")
-plotKML(prob.mean.sg, file.name = "galicia_pred.kml")
+#Change CRs projection
+prob.mean.r <- as(prob.mean.r, "SpatRaster")
+prob.mean.r <- terra::project(prob.mean.r, "+proj=longlat +ellps=clrk66")
+raster(prob.mean.r) %>%
+  raster::KML(., filename = "galicia_pred.kml")
 
 
-plot(prob.mean.sg)
+
 ### --- sd --- ###
-prob.sd.sg <- as(prob.sd.r, "SpatialGridDataFrame")
-plotKML(prob.sd.sg, file.name = "galicia_pred_sd.kml")
+#Change CRs projection
+prob.sd.r <- as(prob.sd.r, "SpatRaster")
+prob.sd.r <- terra::project(prob.sd.r, "+proj=longlat +ellps=clrk66")
+raster(prob.sd.r) %>%
+  raster::KML(., filename = "galicia_pred_sd.kml")
+
 
 
 
@@ -360,13 +372,8 @@ data_arb <- read.csv2("data/spain_arabid/ath_accessions.csv", sep = ",", dec = "
 head(data_arb)
 summary(data_arb)
 
-### --- The spatial polygon --- ####
-load("data/spain_arabid/penin_sp.RData")
-plot(penin_sp)
-
-
-
-
+### --- The spatial sf --- ####
+penin_sf <- readRDS("data/spain_arabid/penin_sf.rds")
 
 
 
