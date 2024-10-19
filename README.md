@@ -18,7 +18,7 @@ The course is divided in three parts combining theoretical and practical aspects
 
 To take full advantage of the course, it is necessary that everyone has the following programs installed:
 
-- version 4.0.0 of [R](https://cran.r-project.org/) or posterior, and
+- version 4.4.1 of [R](https://www.r-project.org/) or posterior, and
 - [RStudio](https://www.rstudio.com/products/rstudio/download/), or
 - [Quarto](https://quarto.org/docs/get-started/), or
 - [Visual Studio Code](https://code.visualstudio.com/download)
