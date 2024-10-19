@@ -11,7 +11,7 @@ The course is divided in three parts combining theoretical and practical aspects
  
 **class1-PART 2: Bayesian inference using the integrated nested Laplace approximation (INLA)** Latent Gaussian models (LGMs). Laplace approximation. Gaussian Markov random fields (GMRFs). Fitting GLMMs using INLA. Structured temporal and spatial random effects.
  
-**class2-PART 3: Geostatistics using INLA and SPDE**. Geostatistics in the context of LGMs. The Stochastic partial differential equation (SPDE). 
+**class2-PART 3: Geostatistics using INLA and inlabru**. Geostatistics in the context of LGMs. The Stochastic partial differential equation (SPDE). 
  
 
 # Software
