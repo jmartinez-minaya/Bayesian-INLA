@@ -6,6 +6,10 @@
 
 
 library(INLA)
+library(sf)
+library(inlabru)
+library(rnaturalearth)
+
 
 
 ### --- 1. Reading the data --- ####
@@ -20,7 +24,7 @@ plot(coords)
 ### ----- 2.1. MESH 1 --- ####
 ### use data coordinates as starting points for mesh
 ## maximum triangle edge size of 0.3
-m1 <- inla.mesh.2d(coords, max.edge = 0.3)
+m1 <- fm_mesh_2d_inla(coords, max.edge = 0.3)
 plot(m1)
 points(coords,pch=16)
 
@@ -36,22 +40,35 @@ pl.dom <- cbind(c(0,1,1,1,0), c(0,0,1,1,1))
 
 ### use data coordinates as starting points for mesh
 ## maximum triangle edge size of 0.3
-m2 <- inla.mesh.2d(loc.dom  = pl.dom, 
+m2 <- fm_mesh_2d_inla(loc.dom  = pl.dom, 
                    max.edge = 0.3)
 plot(m2)
 points(coords, pch = 16)
 
 
 ### ----- 2.3. MESH 3 --- ####
-#### may we have an shapefile of the domain
-sp <- readRDS("data/data_spat/square_sp.rds")
-plot(sp)
+## extension distance in the inner and outer part.
+m2.1 <- fm_mesh_2d_inla(loc.dom  = pl.dom, 
+                      max.edge = 0.3,
+                      offset   = c(0.2, -0.1))
 
-### --- segment from spatial polygon --- ###
-borinla <- inla.sp2segment(sp)
+#Negative represent a factor relative to the data diameter
+par(mfrow=c(1,2))
+plot(m2)
+points(coords, pch = 16)
+
+plot(m2.1)
+points(coords, pch = 16)
+
+
+
+### ----- 2.3. MESH 3 --- ####
+#### may we have an shapefile of the domain
+sf1 <- readRDS("data/data_spat/square_sf.rds")
+plot(sf1)
 
 ### --- mesh --- ###
-m3 <- inla.mesh.2d(boundary = borinla,  
+m3 <- fm_mesh_2d_inla(boundary = sf1,  
                    max.edge = c(0.3))
 plot(m3)
 points(coords,pch=16)
@@ -62,7 +79,7 @@ points(coords,pch=16)
 
 ### ----- 2.4. MESH 4 --- ####
 ### lets make smaller triangles!!
-m4 <- inla.mesh.2d(boundary = borinla, 
+m4 <- fm_mesh_2d_inla(boundary = sf1, 
                    max.edge = 0.1)
 plot(m4)
 points(coords,pch=16)
@@ -74,7 +91,7 @@ points(coords,pch=16)
 
 
 ### ----- 2.5. MESH 5 --- ####
-m5 <- inla.mesh.2d(boundary = borinla, 
+m5 <- fm_mesh_2d_inla(boundary = sf1, 
                    max.edge = c(0.1,.3))
 plot(m5)
 points(coords, pch = 16)
@@ -83,19 +100,22 @@ points(coords, pch = 16)
 
 
 ### ----- 2.6. MESH 6 --- ####
-m6 <- inla.mesh.2d(boundary = borinla, 
+m6 <- fm_mesh_2d_inla(boundary = sf1, 
                  max.edge = c(0.1, .3),
-                 offset   = c(0.2, -0.3))
+                 offset   = c(0.8, 0.3))
 plot(m6)
 points(coords, pch = 16)
 #### this one looks quite good. 
 #### Maybe some small triangles in the corner
 
 
+
+
+
 ### ----- 2.7. MESH 7 --- ####
-m7 <- inla.mesh.2d(boundary = borinla, 
+m7 <- fm_mesh_2d_inla(boundary = sf1, 
                    max.edge = c(0.1, .3),
-                   offset   = c(0.1, -0.3), 
+                   offset   = c(0.1, 0.3), 
                    cutoff   = c(0.05))
 plot(m7)
 points(coords,pch=16)
@@ -109,9 +129,14 @@ points(coords,pch=16)
 ### --- 3. Exercise --- ####
 ### Create a mesh using real data
 ### DATA
-galicia <- read.table("data/galicia_fasc/data_galicia.txt")
+# Loading the malaria prevalence data
+d <- read.csv("https://raw.githubusercontent.com/Paula-Moraga/spatial-model-malaria/master/d.csv")
 
-### Cartography of Galicia
-galicia_sp <- readRDS("data/galicia_fasc/galicia_sp.rds")
+### Cartography of Mozambique
+mozambique_sf <- ne_countries(type = "countries", country = "Mozambique",
+                              scale = "medium", returnclass = "sf")
 
-plot(galicia_sp)
+
+
+
+

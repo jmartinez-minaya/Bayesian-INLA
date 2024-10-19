@@ -33,7 +33,7 @@ For further reference, see the work of Moraga et al. (2021) on Bayesian spatial 
 This section loads the necessary R packages, including **INLA**, **inlabru**, **sf**, and others, to perform spatial modeling.
 
 ```{r install-libs, eval=FALSE}
-install.packages("INLA", repos = "https://inla.r-inla-download.org/R/stable", dep = TRUE)
+#install.packages("INLA", repos = "https://inla.r-inla-download.org/R/stable", dep = TRUE)
 ```
 
 ```{r load-libs}
@@ -440,49 +440,5 @@ sd_pred_point <- sd_pred +
 
 sd_pred_point
 ```
-
-## Leaflet Map of Predicted Prevalence
-
-Finally, we create an interactive leaflet map to visualize the predicted prevalence across Mozambique. Each circle on the map represents a location, with the color corresponding to the predicted prevalence.
-
-- **Leaflet** is used to create an interactive map.
-- **Color palette**: A viridis color palette is used to represent the predicted prevalence.
-
-```{r leaflet-map}
-# Creating a color palette for predicted prevalence
-pal <- colorNumeric(palette = "viridis", domain = predictions$mean)
-
-# Creating a leaflet map to visualize predictions
-leaflet(predictions) %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addCircleMarkers(
-    fillColor = ~pal(mean),
-    color = "#BDBDC3",
-   # radius = 2,
-    fillOpacity = 1,
-    popup = ~paste("Prevalence:", mean)
-  ) 
-%>%
-  addLegend(
-    pal = pal,
-    values = predictions$mean,
-    opacity = 0.9,
-    title = "Prevalence",
-    position = "bottomright"
-  )
-
-leaflet(predictions) %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addCircleMarkers(
-    fillColor = ~pal(mean),
-    color = "#BDBDC3",
-  weight = 30,
-    radius = 2,  # Ajusta el tamaño del círculo
-    fillOpacity = 0.5,
-    popup = ~paste("Prevalence:", mean)
-  )
-```
-
-This interactive map allows you to explore the predicted prevalence at different locations across Mozambique.
 
 
