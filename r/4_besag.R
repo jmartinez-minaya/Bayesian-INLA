@@ -15,6 +15,7 @@ library(ggthemes)
 #BiocManager::install(c("graph", "Rgraphviz"), dep=TRUE)
 library(Rgraphviz)
 library(graph)
+library(leaflet)
 
 
 ### --- 1. Loading the data --- ####
@@ -22,8 +23,13 @@ library(graph)
 data <- readRDS("data/london_suic/london_suicides.RDS")
 Nareas <- length(data[,1])
 
-#Spatial polygon data frame
+# sf
 london.gen <- read_sf("data/london_suic", "LDNSuicides")
+london.gen <- st_set_crs(london.gen, 27700)
+
+ggplot(london.gen) +
+  geom_sf() +
+  theme_void()
 
 
 ### --- 2. Checking if the data of the sp and the data.frame match --- ####
@@ -75,28 +81,38 @@ H <- inla.read.graph(filename="data/london_suic/LDN.graph")
 image(inla.graph2matrix(H),xlab="",ylab="")
 
 ### ----- 3.2. More plotting --- ####
-plot(H)
+#plot(H)
 
 ### ----- 3.3. Plotting the neighbors --- ####
-plot_map_neig <- function(neig, london.gen) {
+plot_map_neig_ggplot <- function(neig, london.gen, temp) {
   
-  # Plot the base map
-  plot(st_geometry(london.gen), col = "white")
+  # Base map of London
+  p <- ggplot() +
+    geom_sf(data = london.gen, fill = "white", color = "black") +
+    
+    # Highlight the selected region in red
+    geom_sf(data = london.gen[neig, ], fill = "red", color = "black") +
+    
+    # Highlight the neighbors in blue
+    geom_sf(data = london.gen[temp[[neig]], ], fill = "blue", color = "black") +
+    
+    # Set the theme
+    theme_minimal() +
+    ggtitle(paste("Selected region:", london.gen$NAME[neig])) +
+    theme(plot.title = element_text(hjust = 0.5))
   
-  # Highlight the selected region in red
-  plot(st_geometry(london.gen[neig, ]), col = "red", add = TRUE)
-  
-  # Highlight neighbors in pink
-  neighbors <- st_geometry(london.gen[temp[[neig]], ])
-  plot(neighbors, col = "pink", add = TRUE)
+  # Print the plot
+  print(p)
   
   # Print information about the selected region and its neighbors
   cat("You have selected", london.gen$NAME[neig], "and its neighbors are:", "\n")
   cat(london.gen$NAME[temp[[neig]]], "\n")
 }
 
-plot_map_neig(neig = 30, london.gen)
-plot_map_neig(neig = 25, london.gen)
+
+plot_map_neig_ggplot(neig = 30, london.gen, temp = temp)
+plot_map_neig_ggplot(neig = 25, london.gen, temp = temp)
+plot_map_neig_ggplot(neig = 23, london.gen, temp = temp)
 
 
 ### --- 4. Fitting a model with bym effect --- ####
@@ -134,33 +150,38 @@ london.gen$SPmean <- round(mod.suicides$summary.random$S[["mean"]], 4)
 london.gen$SPsd <- round(mod.suicides$summary.random$S[["sd"]],5)
 
 #Mean posterior distribution
-ggplot(data = london.gen) +
+a <- ggplot(data = london.gen) +
   geom_sf(aes(fill = SPmean), color = "white") +
-  theme_map() +
+  scale_fill_viridis_c(option = "magma",begin = 0.1, direction = -1) +
+  theme_void() +
   theme(legend.position="bottom",
         plot.title = element_text(hjust = 0.5,
                                   color = "Gray40",
-                                  size = 16,
+                                  size = 20,
                                   face = "bold"),
         legend.title = element_blank(),
         plot.subtitle = element_text(color = "blue"),
         plot.caption = element_text(color = "Gray60")) +
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 1.5)) +  # Adjusting the legend size
   ggtitle("Mean posterior of S") 
   
 #Sd posterior distribution
-ggplot(data = london.gen) +
+b <- ggplot(data = london.gen) +
   geom_sf(aes(fill = SPsd), color = "white") +
-  theme_map() +
+  scale_fill_viridis_c(option = "magma",begin = 0.1, direction = -1) +
+  theme_void() +
   theme(legend.position="bottom",
         plot.title = element_text(hjust = 0.5,
                                   color = "Gray40",
-                                  size = 16,
+                                  size = 20,
                                   face = "bold"),
         legend.title = element_blank(),
         plot.subtitle = element_text(color = "blue"),
         plot.caption = element_text(color = "Gray60")) +
-  ggtitle("Mean posterior of S") 
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 1.5)) +  # Adjusting the legend size
+  ggtitle("Mean posterior of U") 
 
+a | b
 ### --- 4.4. Posterior distribution of suicides mortality --- ####
 london.gen$SMR_mean <- mod.suicides$summary.fitted.values$mean # mean
 london.gen$SMR_sd <- mod.suicides$summary.fitted.values$sd #s
@@ -168,7 +189,6 @@ london.gen$SMR_median <- mod.suicides$summary.fitted.values$`0.5quant` # median
 london.gen$SMR_q025 <- mod.suicides$summary.fitted.values$`0.025quant` # quantile
 london.gen$SMR_q975 <- mod.suicides$summary.fitted.values$`0.975quant` # quantile
 london.gen$SMR_p1 <- 1 - mod.suicides$summary.fitted.values$`1cdf` # probability to be greater than 1
-
 
 ### --- 4.5. Posterior distribution of suicides SMR with cutoff--- ####
 ## Also, the probability for SMR to be greater than 1.
@@ -195,8 +215,20 @@ plot(london.gen["SMR_p1_disc"],
      pal = brewer.pal(9,'Blues')[c(2,4,6,8)],
      main = "p(SMR>1)")
 
-           
+      
+
+### --- 4.6. Plotting in a beautiful way --- ####
+london.gen2 <- st_transform(london.gen, crs = 4326)
+
+pal <- colorNumeric(palette = "YlOrRd", domain = london.gen2$SMR_median)
+l <- leaflet(london.gen2) %>% addTiles() %>%
+  addPolygons(color = "white", fillColor = ~ pal(SMR_median),
+              fillOpacity = 1) %>%
+  addLegend(pal = pal, values = ~SMR_median, opacity = 0.8)
+l
 
 ### --- 5. Excercise --- ###
 #Now, add the covariates (deprivation - x1 and social fragmentation - x2) and 
 #repeat the steps
+
+

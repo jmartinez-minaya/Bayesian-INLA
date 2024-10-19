@@ -29,7 +29,10 @@ To take full advantage of the course, it is necessary that everyone has the foll
 This will be the packages required for the course
 
 ```r
-install.packages(pkgs = c("ggplot2", "gridExtra", "maptools", "sf", "spdep", "lattice", "latticeExtra", "viridis", "splancs", "terra", "lattice", "fields", "plotKML", "raster", "sp"))
+install.packages(pkgs = c("sf", "spdep", "lattice", "latticeExtra", "viridis", 
+                          "gridExtra", "RColorBrewer", "INLA", "ggthemes", 
+                          "leaflet", "ggplot2", "dplyr", "inlabru", "rnaturalearth", 
+                          "patchwork"))
 
 ```
 
@@ -37,7 +40,7 @@ The R-INLA package can be downloaded directly from the webpage https://www.r-inl
 
 ```r
 ### --- INLA --- ###
-install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable")
+install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/stable"), dep=TRUE)
 ```
 
 Also, other packages from Bioconductor
