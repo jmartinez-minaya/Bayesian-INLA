@@ -16,7 +16,8 @@ library(ggthemes)
 library(Rgraphviz)
 library(graph)
 library(leaflet)
-
+library(ggplot2)
+library(patchwork)
 
 ### --- 1. Loading the data --- ####
 #Dataset
@@ -110,7 +111,7 @@ plot_map_neig_ggplot <- function(neig, london.gen, temp) {
 }
 
 
-plot_map_neig_ggplot(neig = 30, london.gen, temp = temp)
+plot_map_neig_ggplot(neig = 30, london.gen, temp = temp) 
 plot_map_neig_ggplot(neig = 25, london.gen, temp = temp)
 plot_map_neig_ggplot(neig = 23, london.gen, temp = temp)
 
@@ -207,15 +208,18 @@ SMR_p1_disc = cut(london.gen$SMR_p1,
 london.gen$SMR_disc <- SMR_disc
 london.gen$SMR_p1_disc <- SMR_p1_disc
 
-plot(london.gen["SMR_disc"],
-     pal = brewer.pal(9,'Blues')[c(2,4,6,8)],
-     main = "Fitted SMR")
 
-plot(london.gen["SMR_p1_disc"],
-     pal = brewer.pal(9,'Blues')[c(2,4,6,8)],
-     main = "p(SMR>1)")
+SMR_disc1 <- ggplot(data = london.gen) +
+  geom_sf(aes(fill = SMR_disc), color = "white") +
+  scale_color_viridis_b(option = "magma",begin = 0.1, direction = -1) +
+  theme_void() 
+  
+SMR_disc2 <- ggplot(data = london.gen) +
+  geom_sf(aes(fill = SMR_p1_disc), color = "white") +
+  scale_color_viridis_b(option = "magma",begin = 0.1, direction = -1) +
+  theme_void() 
 
-      
+SMR_disc1 | SMR_disc2
 
 ### --- 4.6. Plotting in a beautiful way --- ####
 london.gen2 <- st_transform(london.gen, crs = 4326)

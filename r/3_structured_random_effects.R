@@ -2,7 +2,7 @@
 
 library(INLA)
 library(ggplot2)
-library(gridExtra)
+library(patchwork)
 
 ### --- 1. Read the data --- ####
 # Binomial model with temporal effect (without covariates) (Rue and Held 2005)
@@ -83,7 +83,7 @@ plot_rw2 <- ggplot(result_rw2, aes(x = time)) +
   theme(plot.title = element_text(hjust = 0.5))
 
 #png("rws.png", width = 1000, height = 700, res = 150)
-grid.arrange(plot_rw1, plot_rw2)
+plot_rw1 | plot_rw2
 #dev.off()
 
 ### --- BEST MODEL --- ###

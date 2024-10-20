@@ -2,6 +2,7 @@
 
 ### --- 0. Loading libraries --- ####
 library(INLA)
+library(dplyr)
 
 ### --- 1. Loading the data --- ####
 # GLMM
@@ -24,7 +25,7 @@ str(Seeds)
 
 ### --- 2. Defining the formula and fitting the model --- ####
 ### ----- 2.1. Without random effects --- ###
-formula1 <- r ~  1 + x1 + x2 
+formula1 <- r ~ 1 + x1 + x2 
 mod1.seeds = inla(formula1, 
                   data            = Seeds, 
                   family          = "binomial", 
@@ -33,6 +34,7 @@ mod1.seeds = inla(formula1,
                                          waic = TRUE, 
                                          cpo = TRUE))
 summary(mod1.seeds)
+inla.pmarginal(0, mod1.seeds$marginals.fixed$x1ae73)
 
 
 ### ----- 2.2. Interactions between factors --- ####
@@ -48,6 +50,8 @@ summary(mod2.seeds)
 
 
 ### ----- 2.2. Random effects are introduced to the model using the function 'f()' --- ###
+Seeds$plate
+
 formula <- r ~ 1 + x1*x2 + f(plate, 
                                model  = "iid",
                                hyper  = list(theta = list(prior = "loggamma",
@@ -82,6 +86,7 @@ round(head(summary.random),3)
 sigma.v <- inla.tmarginal(function(x) sqrt(1/x), 
                          mod.seeds$marginals.hyperpar[[1]])
 
+plot(sigma.v)
 ### --- Plot  --- ###
 #pdf("posteriori_v.pdf", width=5, height=5)
 plot(inla.smarginal(sigma.v),type="l",xlab="",
@@ -97,9 +102,6 @@ inla.zmarginal(sigma.v)
 ### --- 5. Probability to be positive the coefficient associated with x2? --- ####
 # Pr(beta_x2 > 0)?
 1 - inla.pmarginal(0, mod.seeds$marginals.fixed$x2)
-plot(inla.smarginal(mod.seeds$marginals.fixed$x2), type="l")
-
-
 
 
 
