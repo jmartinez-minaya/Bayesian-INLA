@@ -111,7 +111,7 @@ plot_map_neig_ggplot <- function(neig, london.gen, temp) {
 }
 
 
-plot_map_neig_ggplot(neig = 30, london.gen, temp = temp) 
+plot_map_neig_ggplot(neig = 32, london.gen, temp = temp) 
 plot_map_neig_ggplot(neig = 25, london.gen, temp = temp)
 plot_map_neig_ggplot(neig = 23, london.gen, temp = temp)
 
@@ -227,7 +227,7 @@ london.gen2 <- st_transform(london.gen, crs = 4326)
 pal <- colorNumeric(palette = "YlOrRd", domain = london.gen2$SMR_median)
 l <- leaflet(london.gen2) %>% addTiles() %>%
   addPolygons(color = "white", fillColor = ~ pal(SMR_median),
-              fillOpacity = 1) %>%
+              fillOpacity = 1, weight = 0.5) %>%
   addLegend(pal = pal, values = ~SMR_median, opacity = 0.8)
 l
 
