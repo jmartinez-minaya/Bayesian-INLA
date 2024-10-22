@@ -441,4 +441,38 @@ sd_pred_point <- sd_pred +
 sd_pred_point
 ```
 
+## Leaflet Map of Predicted Prevalence
+
+Finally, we create an interactive leaflet map to visualize the predicted prevalence across Mozambique. Each circle on the map represents a location, with the color corresponding to the predicted prevalence.
+
+- **Leaflet** is used to create an interactive map.
+- **Color palette**: A viridis color palette is used to represent the predicted prevalence.
+
+```{r leaflet-map}
+# Creating a color palette for predicted prevalence
+pal <- colorNumeric(palette = "viridis", domain = predictions$mean)
+
+leaflet(predictions) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(lng = 35.5, lat = -18.5, zoom = 5) %>%  # Ajusta la longitud, latitud y el nivel de zoom
+  addCircleMarkers(
+    fillColor = ~pal(mean),
+    color = ~pal(mean),
+    radius = 1.5,
+    weight = 0.2,
+    fillOpacity = 0.9,
+    popup = ~paste("Prevalence:", mean)) %>%
+  addLegend(
+    pal = pal,
+    values = predictions$mean,
+    opacity = 0.9,
+    title = "Prevalence",
+    position = "bottomright"
+  )
+```
+
+
+
+This interactive map allows you to explore the predicted prevalence at different locations across Mozambique.
+
 
