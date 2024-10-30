@@ -142,6 +142,7 @@ mod.suicides <- inla(formula,
                      E               = E,
                      control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
                      control.predictor = list(compute=TRUE, cdf=c(log(1))))
+mod.suicides$logfile
 
 summary(mod.suicides)
 
@@ -180,7 +181,7 @@ b <- ggplot(data = london.gen) +
         plot.subtitle = element_text(color = "blue"),
         plot.caption = element_text(color = "Gray60")) +
   guides(fill = guide_colorbar(barwidth = 10, barheight = 1.5)) +  # Adjusting the legend size
-  ggtitle("Mean posterior of U") 
+  ggtitle("Sd posterior of S") 
 
 a | b
 ### --- 4.4. Posterior distribution of suicides mortality --- ####
@@ -236,3 +237,75 @@ l
 #repeat the steps
 
 
+
+
+
+### ----- 4.1. Formula --- ####
+formula2 <- y ~ 1 + x1 + x2 + f(S, 
+                     model       = "besag", 
+                     graph       = H,
+                     scale.model = TRUE,
+                     hyper       = 
+                       list(prec = list(prior="loggamma",param = c(1,0.001)))) +
+  f(U, 
+    model       = "iid",
+    hyper       = 
+      list(prec = list(prior="loggamma",param = c(1,0.001))))
+
+
+### ----- 4.2. Model --- ####
+mod.suicides2 <- inla(formula2,
+                     family          = "poisson",
+                     data            = data,
+                     E               = E,
+                     control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+                     control.predictor = list(compute=TRUE, cdf=c(log(1))))
+mod.suicides$logfile
+
+summary(mod.suicides)
+
+
+### ----- 4.3. Posterior distribution of the random effects --- ####
+london.gen$SPmean2 <- round(mod.suicides2$summary.random$S[["mean"]], 4)
+london.gen$SPsd2 <- round(mod.suicides2$summary.random$S[["sd"]],5)
+
+#Mean posterior distribution
+a2 <- ggplot(data = london.gen) +
+  geom_sf(aes(fill = SPmean2), color = "white") +
+  scale_fill_viridis_c(option = "magma",begin = 0.1, direction = -1) +
+  theme_void() +
+  theme(legend.position="bottom",
+        plot.title = element_text(hjust = 0.5,
+                                  color = "Gray40",
+                                  size = 20,
+                                  face = "bold"),
+        legend.title = element_blank(),
+        plot.subtitle = element_text(color = "blue"),
+        plot.caption = element_text(color = "Gray60")) +
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 1.5)) +  # Adjusting the legend size
+  ggtitle("Mean posterior of S") 
+
+#Sd posterior distribution
+b2 <- ggplot(data = london.gen) +
+  geom_sf(aes(fill = SPsd2), color = "white") +
+  scale_fill_viridis_c(option = "magma",begin = 0.1, direction = -1) +
+  theme_void() +
+  theme(legend.position="bottom",
+        plot.title = element_text(hjust = 0.5,
+                                  color = "Gray40",
+                                  size = 20,
+                                  face = "bold"),
+        legend.title = element_blank(),
+        plot.subtitle = element_text(color = "blue"),
+        plot.caption = element_text(color = "Gray60")) +
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 1.5)) +  # Adjusting the legend size
+  ggtitle("Sd posterior of S") 
+
+a | b
+a2 | b2
+
+
+a | a2
+
+summary(mod.suicides)
+summary(mod.suicides)
