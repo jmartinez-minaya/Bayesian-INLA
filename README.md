@@ -85,6 +85,8 @@ Bayesian-INLA/
 ├── Theory/
 │   ├── S1_inla.html
 │   ├── S2_spatial.html
+│   ├── S1_inla.pdf
+│   ├── S2_spatial.pdf
 │
 ├── Practical-lessons/
 │   ├── S1-INLA-KAKHI-VALENCIA/
