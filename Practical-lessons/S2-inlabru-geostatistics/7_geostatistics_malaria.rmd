@@ -1,0 +1,482 @@
+---
+title: "Bayesian Spatial Modeling of Malaria Prevalence in Mozambique using `inlabru`"
+author: "Joaquín Martínez-Minaya"
+date: "`r Sys.Date()`"
+linestretch: "1.5"
+
+output:   
+  bookdown::html_document2:
+    df_print: paged
+    code_folding: hide
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Introduction
+
+Bayesian spatial models are widely applied in health, ecology, and environmental sciences for analyzing spatially distributed data. Traditional approaches, such as Markov chain Monte Carlo (MCMC), are computationally expensive and often face convergence issues in large datasets.
+
+The **Integrated Nested Laplace Approximation (INLA)** method offers an efficient alternative for Bayesian inference in latent Gaussian models. When combined with the **Stochastic Partial Differential Equation (SPDE)** approach, it enables the analysis of geostatistical data collected at specific locations, allowing for spatial prediction and the assessment of covariate effects.
+
+This tutorial demonstrates the use of `inlabru` to model malaria prevalence in Mozambique. The provided data includes prevalence rates and covariates such as altitude, temperature, and proximity to water bodies. The goal is to fit a spatial Bayesian model to predict malaria risk and evaluate the effects of covariates using the **R-INLA** package.
+
+For further reference, see the work of Moraga et al. (2021) on Bayesian spatial modeling in public health ([Moraga et al., 2021](https://www.sciencedirect.com/science/article/pii/S1877584521000393)).
+
+# Installing and Loading the Required Libraries
+
+This section loads the necessary R packages, including **INLA**, **inlabru**, **sf**, and others, to perform spatial modeling.
+
+```{r install-libs, eval=FALSE}
+#install.packages("INLA", repos = "https://inla.r-inla-download.org/R/stable", dep = TRUE)
+```
+
+```{r load-libs}
+# Loading necessary libraries
+library(ggplot2)
+library(dplyr)
+library(INLA)
+library(inlabru)
+library(sf)
+library(rnaturalearth)
+library(patchwork)
+library(leaflet)
+```
+
+# Helper Functions
+
+A utility function for scaling colors in plots is defined to assist in visualizing geospatial data. It is based on tutorials in the [inlabru website](https://inlabru-org.github.io/inlabru/).
+
+```{r define-function}
+colsc <- function(...) {
+  scale_color_gradientn(
+    colors = rev(RColorBrewer::brewer.pal(11, "RdYlBu")),
+    limits = range(..., na.rm = TRUE)
+  )
+}
+```
+
+# Reading and Preparing the Data
+
+This section prepares the data for fitting the Bayesian spatial model. It includes loading the geographic boundaries of Mozambique and loading the malaria prevalence data and covariates for predictions.
+
+## Boundaries of Mozambique
+
+The boundaries of Mozambique are obtained using the `rnaturalearth` package. This provides geographic context for the analysis of malaria prevalence.
+
+- **`ne_countries`** retrieves country-level geographic data. Mozambique is specified as the country of interest, and it is returned as an `sf` object for plotting and spatial analysis.
+
+```{r read-boundaries}
+# Loading the boundaries of Mozambique
+mozambique_sf <- ne_countries(type = "countries", country = "Mozambique",
+                              scale = "medium", returnclass = "sf")
+
+# Plotting Mozambique's boundaries
+ggplot(mozambique_sf) + 
+  geom_sf() + 
+  theme_void()
+```
+
+In the plot above, the boundaries of Mozambique are visualized using **ggplot2** and **geom_sf**, which are specifically designed for spatial data.
+
+## Data for Model Fitting
+
+The dataset on malaria prevalence is loaded. It contains information such as the number of positive cases and the total number of examined individuals at specific locations. The ratio of positive cases to the total examined individuals represents the prevalence.
+
+- **`sf::st_as_sf`** converts the data into an `sf` object, allowing the handling of spatial data with geographic coordinates (longitude and latitude).
+
+```{r read-fitting-data}
+# Loading the malaria prevalence data
+d <- read.csv("https://raw.githubusercontent.com/Paula-Moraga/spatial-model-malaria/master/d.csv")
+
+# Calculating prevalence as the ratio of positive cases to the total examined
+d$prev <- d$positive/d$examined
+
+# Converting the data to an sf object for spatial analysis
+data <- sf::st_as_sf(
+  d,
+  coords = c("longitude", "latitude"),
+  crs = 4326 
+)
+
+# Plotting malaria prevalence across Mozambique
+ggplot() +
+    geom_sf(data = mozambique_sf, fill = "gray90") +
+  geom_sf(data=data, aes(col = prev)) +
+  colsc(data$prev) +
+  theme_minimal()
+```
+
+In this step, the prevalence data is visualized using **ggplot2**. Each point on the map represents a location where data on malaria prevalence was collected. The color scale shows the variation in prevalence rates across different locations.
+
+## Data for Prediction
+
+This dataset contains covariates such as altitude, temperature, and other environmental factors, which will be used to make predictions based on the fitted model.
+
+- **`sf::st_as_sf`** is used again to convert the data into an `sf` object for spatial analysis.
+
+```{r read-prediction-data}
+# Loading the data for prediction, which contains covariates
+dp <- read.csv("https://raw.githubusercontent.com/Paula-Moraga/spatial-model-malaria/master/dp.csv")
+dp$alt <- dp$altitude
+
+# Converting the covariate data to an sf object
+dp_pred <- sf::st_as_sf(
+  dp,
+  coords = c("longitude", "latitude"),
+  crs = 4326
+)
+
+# Visualizing one of the covariates (e.g., temperature)
+plot_covs <- lapply(colnames(dp)[-c(1:4)], function(x){
+  ggplot(dp_pred) +
+  geom_sf(aes(col = !!sym(x))) +
+  theme_void() +
+  colsc(dp_pred[[x]])
+})
+multiplot(plotlist = plot_covs, cols = 3)
+   
+```
+
+# Fitting the Model
+
+This section covers the process of creating the spatial mesh, defining priors, and fitting the Bayesian spatial model using **inlabru**.
+
+## Creating the Mesh
+
+A mesh is created to discretize the spatial domain for the model. The mesh is essential in SPDE models as it defines the spatial structure, allowing the model to capture spatial dependence. 
+
+- **`fm_mesh_2d_inla`** creates a 2D mesh based on the boundary of Mozambique with specific settings for edge length and cutoff.
+- The mesh is then plotted using **geom_fm** for visualization.
+
+```{r create-mesh}
+mesh <- fm_mesh_2d_inla(boundary = mozambique_sf, 
+                        max.edge = c(1, 2), 
+                        cutoff = 0.05,
+                        offset = c(1, 3),
+                        crs    = 4326)
+
+# Visualizing the mesh
+mesh1 <- ggplot() +
+  geom_fm(data = mesh) +
+    theme_void()
+
+# Combining the mesh with the malaria prevalence data
+mesh2 <-ggplot() +
+  geom_fm(data = mesh, fill = "white") +                   
+  geom_sf(data = data, aes(col = prev)) +  
+  colsc(data$prev) +
+  theme_void()
+
+mesh1 | mesh2
+```
+
+The plots show how the mesh is constructed over the boundaries of Mozambique and how it relates to the malaria prevalence data.
+
+## Prior for the SPDE Model
+
+Setting priors for the **SPDE** model is essential to encode prior beliefs about the model parameters. Here, we focus on setting priors for two parameters:
+
+- **Range**: Describes how far the spatial effect extends before becoming negligible.
+- **Sigma**: Represents the expected variability in the spatial field.
+
+### Prior for Sigma
+
+The prior for **sigma** defines our belief about the variance of the spatial effect. Specifically, we set:
+- **sigma0** = 1 (threshold for the variance)
+- **p** = 0.01 (1% chance that the true variance exceeds sigma0)
+
+This implies that:
+
+\[
+P(\sigma > \sigma_0) = p
+\]
+
+In the code, we define this prior as:
+
+```r
+prior.sigma = c(1, 0.01)
+```
+
+### Prior for Range
+
+For the **range**, which represents how far spatial effects are correlated, we set:
+- **r0**: Half the diameter of the spatial domain (calculated from the bounding box of the data).
+- **p** = 0.5 (50% chance that the range is shorter than this threshold).
+
+This implies that:
+
+\[
+P(r < r_0) = p
+\]
+
+In the code, this prior is set as:
+
+```r
+prior.range = c(range0, 0.5)
+```
+
+
+```{r spde-prior}
+range0 <- st_bbox(data) %>%
+  as.list(.) %>%
+  as_tibble(.) %>%
+  mutate(range0 = pmin(xmax-xmin, ymax-ymin)/2) %>%
+  dplyr::select(range0) %>%
+  dplyr::pull(.)
+
+# Setting priors for SPDE model
+matern <- inla.spde2.pcmatern(
+  mesh = mesh, 
+  prior.range = c(range0, 0.5),
+  prior.sigma = c(1, 0.01)) 
+```
+
+## Fitting the Model with inlabru
+
+Here, we define the components of the model and fit it using **inlabru**. The model includes fixed effects such as **altitude**, **temperature**, and other environmental covariates, as well as a spatial effect modeled using the SPDE.
+
+- The model is fitted using **bru** with a **binomial** likelihood, and the number of trials (`Ntrials`) corresponds to the number of individuals examined for malaria at each location.
+
+```{r fit-model}
+# Defining model components
+cmp <- positive ~ Intercept(1) + alt + temp + prec + hum + pop + dist_aqua + 
+  field(geometry, model = matern)
+
+# Fitting the model
+fit <- bru(cmp, 
+           data = data, 
+           family = "binomial",
+           Ntrials = data$examined)
+
+data
+```
+
+## Posterior Distributions
+
+After fitting the model, we analyze the posterior distributions of the fixed effects, hyperparameters, and spatial field.
+
+### Fixed Effects
+
+The posterior distributions of the fixed effects, including the intercept and covariates, are plotted.
+
+```{r plot-fixed-effects}
+# Plotting the posterior distribution of fixed effects
+int.plot <- plot(fit, c("Intercept"))
+fit$summary.fixed %>% rownames(.) %>%
+  lapply(., function(x){plot(fit, x)}) -> plot_fixed
+
+# Combining multiple plots
+multiplot(plot_fixed[[2]], plot_fixed[[3]], plot_fixed[[4]], 
+          plot_fixed[[5]], plot_fixed[[6]], plot_fixed[[7]], cols = 3)
+```
+
+### Hyperparameters
+
+We also explore the posterior distributions of the hyperparameters, such as the spatial range and variance.
+
+```{r plot-hyperparams}
+# Plotting the posterior distribution of the spatial range and variance
+spde.range <- spde.posterior(fit, "field", what = "range")
+spde.var <- spde.posterior(fit, "field", what = "variance")
+
+# Plotting range and variance
+range.plot <- plot(spde.range)
+var.plot <- plot(spde.var)
+
+multiplot(range.plot, var.plot)
+```
+
+The plots above visualize the uncertainty in the spatial effect's range and variance, providing insight into the model's behavior.
+
+
+## Spatial Effect
+
+Once the model is fitted, we predict the spatial effect and visualize both the **mean** and **standard deviation** (sd) of the spatial field. The spatial effect provides insight into how malaria risk varies across the geographic region.
+
+- **`predict`** is used to make predictions based on the fitted model. The `field` component represents the spatial effect, and the family is set to **binomial** as we are modeling malaria prevalence.
+
+The following code creates two plots: one for the mean of the spatial effect and one for the standard deviation. The two plots are combined into a single figure for better comparison.
+
+```{r plot-spatial-effect}
+# Predicting spatial effect
+pred_sp <- predict(fit, 
+                   dp_pred,
+                   ~ field,
+                   family = "binomial")
+
+# Plotting the mean of the spatial effect
+mean_sp <- ggplot(pred_sp) +
+  geom_sf(aes(col = mean)) + 
+  colsc(pred_sp$mean) +
+  theme_void() +
+  ggtitle("Mean") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank())
+
+# Plotting the standard deviation of the spatial effect
+sd_sp <- ggplot(pred_sp) + 
+  geom_sf(aes(col = sd)) +
+  colsc(pred_sp$mean) +
+  theme_void() +
+  ggtitle("Sd") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank())
+
+# Combining the plots for mean and sd
+combined_plot_sp <- (mean_sp | sd_sp) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Posterior for the spatial effect",
+                  theme = theme(plot.title = element_text(hjust = 0.5))) &
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 12)) &  # Increasing legend text size
+  guides(color = guide_colorbar(barwidth = 10, barheight = 1))  # Adjusting color bar length
+
+combined_plot_sp
+```
+
+The combined plot shows the predicted spatial field for malaria prevalence, with separate panels displaying the mean and standard deviation.
+
+## Correlation and Covariance Functions
+
+The final step is to visualize the posterior correlation and covariance functions for the spatial field. These functions provide insight into how the spatial effect behaves over distance.
+
+- **Correlation function**: Describes how the spatial effect at one location correlates with another as the distance between them increases.
+- **Covariance function**: Measures the extent of variability in the spatial field over space.
+
+```{r plot-cov-corr}
+# Plotting the posterior correlation and covariance functions
+corplot <- plot(spde.posterior(fit, "field", what = "matern.correlation"))
+covplot <- plot(spde.posterior(fit, "field", what = "matern.covariance"))
+
+# Combining the plots for covariance and correlation
+multiplot(covplot, corplot)
+```
+
+These plots help in understanding the structure of the spatial effect and how it varies across Mozambique.
+
+# Predictions
+
+In this section, we make predictions using the fitted model and transform the predictions to probabilities using the inverse logit function. The **Invlogit** function converts the linear predictor from the model into probabilities for the binomial outcome (malaria prevalence).
+
+```{r invlogit-function}
+# Defining the inverse logit function
+Invlogit <- function(x){
+  res <- exp(x)/(1 + exp(x))
+  res
+}
+```
+
+We then use **predict** to generate predictions for the malaria prevalence based on the covariates from the prediction dataset (`dp_pred`). The predictions are transformed into probabilities using the inverse logit function.
+
+```{r predict-prevalence}
+# Generating predictions for malaria prevalence
+predictions <- predict(fit, 
+                       newdata = dp_pred, 
+                       ~data.frame(prob = Invlogit(field + Intercept + alt + temp + prec + hum + pop + dist_aqua)), 
+                       family = "binomial")
+```
+
+## Visualizing Predictions
+
+Two plots are created to visualize the **mean** and **standard deviation** (sd) of the predicted prevalence. These are combined into a single figure for comparison.
+
+- **`mean_pred`**: Plot showing the mean predicted prevalence.
+- **`sd_pred`**: Plot showing the standard deviation of the predicted prevalence.
+
+```{r plot-predictions}
+# Creating a color scale for the plots
+csc1 <- colsc(c(0, 1))
+
+# Plotting the mean of the predicted prevalence
+mean_pred <- ggplot(predictions) +
+  geom_sf(aes(col = mean)) + 
+  csc1 +
+  theme_void() +
+  ggtitle("Mean") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank())
+
+# Plotting the standard deviation of the predicted prevalence
+sd_pred <- ggplot(predictions) + 
+  geom_sf(aes(col = sd)) +
+  csc1 +
+  theme_void() +
+  ggtitle("Sd") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank())
+
+# Original data
+data_plot <- ggplot(mozambique_sf) +
+  geom_sf(fill = "white") + 
+  geom_sf(data = data, aes(col = prev)) +
+  colsc(data$prev) +
+  theme_void() +
+  ggtitle("Original data") +
+    theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank())
+
+# Combining the plots for mean and sd
+combined_plot <- (data_plot | mean_pred | sd_pred ) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Posterior predictive distribution for the Prevalence",
+                  theme = theme(plot.title = element_text(hjust = 0.5))) &
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 12)) &  # Increase the legend text size
+  guides(color = guide_colorbar(barwidth = 20, barheight = 1.5))  # Increase length of color bar
+
+combined_plot
+```
+
+## Adding Original Data Points
+
+We can enhance the standard deviation plot by adding the original points for uncertainty. This plot highlights the areas where the standard deviation is higher, providing insight into where the model is less certain.
+
+```{r sd-plot-with-points}
+# Adding original data points to the standard deviation plot
+sd_pred_point <- sd_pred +
+  geom_sf(data = data, aes(geometry = geometry), size = 1, color = "red")
+
+sd_pred_point
+```
+
+## Leaflet Map of Predicted Prevalence
+
+Finally, we create an interactive leaflet map to visualize the predicted prevalence across Mozambique. Each circle on the map represents a location, with the color corresponding to the predicted prevalence.
+
+- **Leaflet** is used to create an interactive map.
+- **Color palette**: A viridis color palette is used to represent the predicted prevalence.
+
+```{r leaflet-map}
+# Creating a color palette for predicted prevalence
+pal <- colorNumeric(palette = "viridis", domain = predictions$mean)
+
+leaflet(predictions) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(lng = 35.5, lat = -18.5, zoom = 5) %>%  # Ajusta la longitud, latitud y el nivel de zoom
+  addCircleMarkers(
+    fillColor = ~pal(mean),
+    color = ~pal(mean),
+    radius = 1.5,
+    weight = 0.2,
+    fillOpacity = 0.9,
+    popup = ~paste("Prevalence:", mean)) %>%
+  addLegend(
+    pal = pal,
+    values = predictions$mean,
+    opacity = 0.9,
+    title = "Prevalence",
+    position = "bottomright"
+  )
+```
+
+
+
+This interactive map allows you to explore the predicted prevalence at different locations across Mozambique.
+
+

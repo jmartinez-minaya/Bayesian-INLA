@@ -1,0 +1,500 @@
+---
+title: "Disease Mapping using INLA"
+author: "Joaquín Martínez-Minaya"
+date: "`r Sys.Date()`"
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(tidyverse)
+library(INLA)
+library(readxl)
+library(dplyr)
+library(RColorBrewer)
+library(patchwork)
+library(spdep)
+library(leaflet)
+
+```
+
+
+# Introduction
+
+Disease mapping is a cornerstone of epidemiology, offering insights into the **spatial distribution of health risks**. Standardized Mortality Ratios (**SMRs**) are commonly used to quantify disease risks in specific regions, enabling comparisons across populations with varying sizes and demographic structures. Despite their utility, **SMRs can be misleading**, particularly in areas with small populations.
+
+This document examines these challenges using **oral cancer mortality data** from the Valencian Region. We calculate SMRs, discuss their limitations, and explore alternative statistical approaches to improve risk estimation. All analyses and methodologies presented in this tutorial are inspired by Examples 4.2 and 4.5 from the book *Disease Mapping. From Foundations to Multidimensional Modeling* by Martínez-Beneito, M. and Botella, P.
+
+
+# Epidemiological Context
+
+In epidemiology, the **Standardized Mortality Ratio (SMR)** is a widely used measure to assess the **relative risk of mortality** in a specific geographic area compared to a standard population. It is defined as:
+
+\[
+\text{SMR}_i = \frac{O_i}{E_i} \times 100
+\]
+
+Where:
+
+- \( O_i \): **Observed number of deaths** in area \( i \).
+
+- \( E_i \): **Expected number of deaths** in area \( i \), typically calculated based on the area's population and age-specific mortality rates in a reference population.
+
+**Interpretation**:
+
+- **SMR = 100**: Risk is equivalent to the standard population.
+- **SMR > 100**: Higher-than-expected mortality (**excess risk**).
+- **SMR < 100**: Lower-than-expected mortality (**reduced risk**).
+
+**SMRs adjust for population size and demographic composition**, making them valuable for identifying high- and low-risk areas. However, their **reliability decreases in small populations**, where variability can distort the estimates.
+
+# Oral Cavity Cancer in the Valencian Region
+
+Oral cavity cancer is a significant public health concern due to its **serious impact on quality of life and survival rates**. In the Valencian Region, this disease has shown a **notable geographic disparity**, with some municipalities experiencing higher mortality rates than others. This variation necessitates a deeper understanding of the spatial distribution of risks to guide public health interventions effectively.
+
+## Case Description
+
+This analysis focuses on **oral cavity cancer mortality data** collected across the municipalities of the Valencian Region. The dataset includes:
+
+- **Observed deaths (\(O_i\))**: Total number of deaths attributed to oral cavity cancer in each municipality over the study period.
+- **Expected deaths (\(E_i\))**: Estimated number of deaths based on population size and age-specific mortality rates from a standard reference population.
+- **Population data**: To calculate expected deaths and evaluate the role of population size in shaping mortality patterns.
+
+## Key Observations
+
+1. **Extreme SMRs in Small Municipalities**:  
+   Small municipalities with low populations often display highly variable SMRs. For example:
+   - **Castell de Cabres**: Despite a population of ~10 men, it recorded an SMR of **3977** due to a single observed death.
+   - Similar patterns occur in other rural municipalities, highlighting the instability of SMRs in such areas.
+
+2. **Spatial Patterns**:  
+   Choropleth maps of SMRs reveal clusters of extreme values, particularly in rural areas. These clusters may not necessarily reflect genuine differences in disease risk but instead artifacts caused by population size variability.
+
+## Medical Objectives
+
+The overarching goal of this analysis is to provide **accurate and interpretable estimates of disease risk** to inform public health decisions. Specifically:
+
+1. **Identify High-Risk Areas**:  
+   Highlight municipalities with genuinely elevated risks of oral cavity cancer to prioritize public health resources and interventions.
+
+2. **Stabilize Risk Estimates**:  
+   Develop robust statistical methods to reduce the **variability and bias** inherent in SMRs for small populations.
+
+3. **Understand Geographic Disparities**:  
+   Investigate whether rural municipalities genuinely exhibit higher or lower risks of oral cavity cancer and explore potential factors, such as environmental exposures or access to healthcare.
+
+4. **Guide Public Health Policy**:  
+   Use the findings to:
+   - Design targeted prevention campaigns in high-risk areas.
+   - Improve early detection and treatment programs.
+   - Address potential healthcare inequities between rural and urban populations.
+
+By addressing these objectives, we aim to produce a **reliable disease map** that accurately reflects the true spatial distribution of oral cavity cancer mortality in the Valencian Region. This is essential for ensuring that limited healthcare resources are allocated where they are most needed.
+
+
+# Choropleth Maps
+
+This section visualizes the spatial distribution of **Standardized Mortality Ratios (SMR)** and **population** across the municipalities of the Valencian Region. These visualizations help identify areas of high and low disease risk and examine the relationship between population size and risk levels.
+
+```{r read-spatial-data, echo=TRUE, message=FALSE}
+# Read the spatial data (shapefile)
+VR.sf <- st_read("Valencian_Region_Oral_Cancer.shp", quiet = TRUE)
+
+# Check the structure of the spatial data
+print(st_geometry(VR.sf))
+head(VR.sf)
+```
+
+We now create a combined choropleth map:
+1. **SMR Map**: Shows the spatial distribution of SMRs.
+2. **Population Map**: Highlights population levels across municipalities.
+
+Both maps are displayed side by side for comparison.
+
+```{r combined-choropleth, echo=TRUE, message=FALSE}
+# Prepare SMR and Population data
+VR.sf <- VR.sf %>%
+  mutate(
+    SMR = 100 * Obs / Exp,
+    cut_smr = cut(SMR,
+                  breaks = c(-0.1, 85, 90, 95, 100, 105, 110, 115, 1e+07),
+                  include.lowest = TRUE),
+    cut_pop = cut(Population,
+                  breaks = c(0, quantile(Population, probs = seq(0, 1, length.out = 7))),
+                  include.lowest = TRUE)
+  )
+
+
+# SMR
+colors_smr <- brewer.pal(8, "BrBG")[8:1]
+
+# Create the ggplot map
+smr_map <- ggplot(VR.sf) +
+  geom_sf(aes(fill = cut_smr), 
+          color = "gray10", # Border color
+          linewidth = 0.1) +  # Adjust border thickness
+  scale_fill_manual(
+    values = colors_smr,                                    # Use custom palette
+    name = "SMR",                                           # Legend title
+    labels = c("<85", "85-90", "90-95", "95-100", "100-105", "105-110", "110-115", ">120") # Custom legend labels
+  ) +
+  labs(title = "SMR") +      # Add title
+  theme_minimal() +                                          # Clean theme
+  theme(
+    legend.position = "bottom",                             # Legend at bottom
+    legend.key.width = unit(0.7, "cm"),                       # Adjust legend size
+    legend.key.height = unit(0.3, "cm"),  
+    panel.grid = element_blank(),  
+        legend.title = element_blank(),
+# Remove gridlines for cleaner map
+    axis.text = element_blank(),                            # Remove axis text
+    axis.ticks = element_blank(),                            # Remove axis ticks
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), # Center and style the title
+) +
+  guides(fill=guide_legend(ncol=2))
+
+
+
+# Population
+# Define the color palette
+colors_pop <- brewer.pal(7, "Oranges")
+
+# Create the ggplot map
+population_map <- ggplot(VR.sf) +
+  geom_sf(aes(fill = cut_pop), color = "gray10",  linewidth = 0.01)+   # Map `fill` to `cut_pop`, gray borders
+  scale_fill_manual(
+    values = colors_pop,                                    # Use custom palette
+    name = "Population",                                    # Legend title
+    labels = c("Low", "", "", "", "", "", "High")           # Custom legend labels
+  ) +
+  labs(title = "Population") +      
+  theme_minimal() +                                    # Clean theme
+   theme(
+         panel.grid = element_blank(),                           # Remove gridlines for cleaner map
+    axis.text = element_blank(),                            # Remove axis text
+    axis.ticks = element_blank(), 
+    legend.title = element_blank(),
+    legend.position = "bottom",                             # Legend at bottom
+    legend.key.width = unit(0.7, "cm"),                       # Adjust legend size
+    legend.key.height = unit(0.3, "cm"),                     # Adjust legend height
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), # Center and style the title
+ 
+  ) +
+  guides(fill=guide_legend(ncol=2))
+
+
+smr_map + population_map
+
+```
+
+
+
+# Small Areas
+
+Small areas often present challenges in disease mapping due to the **statistical instability of SMRs**. Castell de Cabres, a municipality in the Valencian Region with a population of only ~10, is a clear example.
+
+```{r}
+VR.sf %>%
+  filter(SMR> 500) %>%
+  arrange(desc(SMR)) %>%
+  select(NOMBRE, Population, Obs, SMR) %>%
+  as.data.frame(.) %>%
+  select(-geometry) %>%
+  knitr::kable(.)
+```
+
+This extreme value arises from the combination of a **small population** and a **single observed death**. Such cases highlight the **volatility of SMRs** in low-population areas.
+
+If Castell de Cabres had recorded **no deaths** (\(O_i = 0\)), then SMR = 0. This illustrates how SMRs in small areas can swing from extreme highs to the lowest possible value, not due to true changes in risk but because of random variability.
+
+
+The implications are:
+
+- **Unreliable Estimates**: SMRs in small areas are sensitive to single events, often leading to misleading patterns.  
+- **Bias in Resource Allocation**: High SMRs in small populations may draw attention away from areas with genuine risk.  
+- **Need for Stabilization**: Bayesian smoothing or hierarchical models are necessary to account for the uncertainty in small areas.
+
+These challenges underscore the importance of **contextualizing SMRs** in disease mapping and exploring alternative approaches to estimate risks in small areas reliably.
+
+
+
+# Defining Neighbor Relations
+
+In spatial analysis, defining neighbor relations is essential for modeling spatial dependencies. This section demonstrates how to define and visualize neighbor relationships for the municipalities in the Valencian Region.
+
+## 3.1 Creating the Neighbor Graph
+
+We first define the neighbor relationships using `poly2nb` from the `spdep` package and create a graph file compatible with **INLA**.
+
+```{r define-neighbors, message=FALSE}
+
+# Create neighbor relationships
+temp <- poly2nb(VR.sf)
+
+# Save the neighbor graph for INLA
+nb2INLA("VR.graph", temp)
+
+# Load the graph into INLA
+H <- inla.read.graph(filename = "VR.graph")
+
+# Visualize the adjacency matrix of the graph
+image(inla.graph2matrix(H), xlab = "", ylab = "")
+```
+
+## 3.2 Visualizing Neighbor Relationships
+
+To better understand the spatial structure of the Valencian Region, we plot the neighbors of selected municipalities using a custom function.
+
+```{r plot-neighbors, message=FALSE}
+# Function to visualize neighbors on the map
+plot_map_neig_ggplot <- function(neig, VR.sf, temp) {
+  # Base map of the Valencian Region
+  p <- ggplot() +
+    geom_sf(data = VR.sf, fill = "white", color = "black") +                    # Base map
+    geom_sf(data = VR.sf[neig, ], fill = "red", color = "black") +              # Selected region
+    geom_sf(data = VR.sf[temp[[neig]], ], fill = "blue", color = "black") +     # Neighbor regions
+    theme_minimal() +
+    ggtitle(paste("Selected region:", VR.sf$NOMBRE[neig])) +                    # Title
+    theme(plot.title = element_text(hjust = 0.5))                              # Center the title
+
+  # Print the plot
+  print(p)
+
+  # Print neighbor information
+  cat("You have selected", VR.sf$NOMBRE[neig], "and its neighbors are:", "\n")
+  cat(VR.sf$NOMBRE[temp[[neig]]], "\n")
+}
+
+# Example: Plot neighbors for selected municipalities
+plot_map_neig_ggplot(neig = 525, VR.sf, temp = temp)
+```
+
+
+
+# Fitting a Model with a BYM Effect
+
+This section demonstrates how to fit a model with spatial and unstructured random effects using the **Besag-York-Mollié (BYM)** model. The spatial random effects account for neighboring relationships, while the unstructured effects capture independent variability.
+
+## Model Description
+
+In this analysis, we use a **Poisson regression model** with spatially structured and unstructured random effects to model the disease risk in the Valencian Region. The Poisson distribution is particularly well-suited for modeling **count data**, such as the number of observed cases, and it is ideal for analyzing the **Standardized Mortality Ratio (SMR)** because it directly relates observed and expected cases, adjusting for population differences across areas.
+
+1. **Likelihood**:  
+   The observed number of cases (\(O_i\)) in each area \(i\) follows a **Poisson distribution**:
+   \[
+   O_i \sim \text{Poisson}(\lambda_i), \quad \lambda_i = E_i \rho_i,
+   \]
+   where:
+   - \(E_i\) is the expected number of cases, derived from the population size and age-specific rates in a standard population,
+   - \(\rho_i\) is the relative risk, modeled on the log scale as:
+   \[
+   \log(\rho_i) = \eta_i.
+   \]
+
+2. **Linear Predictor**:  
+   The linear predictor \(\eta_i\) captures both spatial and non-spatial variability:
+   \[
+   \eta_i = \beta_0 + u_i + v_i,
+   \]
+   where:
+   - \(\beta_0\) is the intercept, representing the baseline log-risk,
+   - \(u_i\) is the **independent random effect**, accounting for uncorrelated variability specific to each area,
+   - \(v_i\) is the **spatially structured random effect**, capturing correlation between neighboring areas.
+
+3. **Random Effects**:  
+   - **Independent Effect (\(u_i\))**:  
+     Modeled as independent and identically distributed:
+     \[
+     u_i \sim \mathcal{N}(0, \tau_u^{-1}),
+     \]
+     where \(\tau_u\) is the precision of the random effect.
+   - **Spatial Effect (\(v_i\))**:  
+     Modeled conditionally on its neighbors:
+     \[
+     v_i \mid \{v_j : j \sim i\} \sim \mathcal{N}\left(\frac{1}{n_i} \sum_{j \sim i} v_j, \frac{1}{n_i \tau_v}\right),
+     \]
+     where \(n_i\) is the number of neighbors for area \(i\), and \(\tau_v\) is the precision of the spatial random effect.
+
+4. **Hyperparameters**:  
+   The standard deviation parameters \(\sigma_u\) and \(\sigma_v\)  follow uniform priors:
+   \[
+   \sigma_u, \sigma_v \sim \text{Uniform}(0, \infty).
+   \]
+
+
+
+## Adding IDs for Random Effects
+
+To define spatial and independent random effects, we assign unique IDs for each municipality:
+
+```{r add-ids, echo=TRUE}
+VR.sf <- VR.sf %>%
+  mutate(S = as.numeric(row_number())) # Unstructured effect IDs
+```
+
+## Defining the Formula
+
+```{r define-formula, echo=TRUE}
+sdunif="expression:
+logdens=-log_precision/2;
+return(logdens)"
+
+formula <- Obs ~ 1 + 
+  f(S, 
+    model = "bym", 
+    graph = H, 
+    scale.model = TRUE,
+    hyper=list(prec.spatial=list(prior=sdunif),
+prec.unstruct=list(prior=sdunif)))
+```
+
+## Fitting the Model
+
+We fit the model using INLA, specifying the Poisson family for the observed counts and including the expected counts (`E`) as an offset.
+
+```{r fit-model, echo=TRUE}
+mod.disease <- inla(formula,
+                    family = "poisson",
+                    data = VR.sf,
+                    E = Exp,
+                    control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
+                    control.predictor = list(compute = TRUE, cdf = c(log(1))))
+summary(mod.disease)
+```
+
+
+## Posterior Distribution of SMR
+
+We calculate the posterior mean, standard deviation, median, and credible intervals for SMRs. Additionally, we assess the probability that the SMR is greater than 1.
+
+```{r posterior-smr, echo=TRUE}
+VR.sf <- VR.sf %>%
+  mutate(SMR_mean = mod.disease$summary.fitted.values$mean,
+         SMR_sd = mod.disease$summary.fitted.values$sd,
+         SMR_median = mod.disease$summary.fitted.values$`0.5quant`,
+         SMR_q025 = mod.disease$summary.fitted.values$`0.025quant`,
+         SMR_q975 = mod.disease$summary.fitted.values$`0.975quant`,
+         SMR_p1 = 1 - mod.disease$summary.fitted.values$`1cdf`)
+```
+
+## Visualizing SMRs with Cutoffs
+
+We categorize and map the SMR means and probabilities.
+
+```{r visualize-smr, echo=TRUE}
+SMR.cutoff <- c(-0.1, 85, 90, 95, 100, 105, 110, 115, 1e+07)
+SMR_p1.cutoff <- c(0, 0.2, 0.6, 0.8, 1)
+
+VR.sf <- VR.sf %>%
+  mutate(SMR_disc = cut(SMR_mean*100, breaks = SMR.cutoff, include.lowest = TRUE,
+                        labels = c("<85", "85-90", "90-95", "95-100", "100-105", "105-110", "110-115", ">120")),
+         SMR_p1_disc = cut(SMR_p1, breaks = SMR_p1.cutoff, include.lowest = TRUE))
+
+
+
+SMR_fitted <- ggplot(VR.sf) +
+  geom_sf(aes(fill = SMR_disc), 
+          color = "gray10", # Border color
+          linewidth = 0.1) +  # Adjust border thickness
+  scale_fill_manual(
+    values = colors_smr,                                    # Use custom palette
+    name = "SMR",                                           # Legend title
+    labels = c("<70", "70-90", "90-95", "95-100", "100-105", "105-110", "110-130", ">130"),
+    drop = FALSE
+  )+
+  labs(title = "SMR") +      # Add title
+  theme_minimal() +                                          # Clean theme
+  theme(
+    legend.position = "bottom",                             # Legend at bottom
+    legend.key.width = unit(0.7, "cm"),                       # Adjust legend size
+    legend.key.height = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), # Center and style the title
+
+    panel.grid = element_blank(),  
+        legend.title = element_blank(),
+# Remove gridlines for cleaner map
+    axis.text = element_blank(),                            # Remove axis text
+    axis.ticks = element_blank()                            # Remove axis ticks
+  ) +
+  guides(fill=guide_legend(ncol=2))
+smr_map | SMR_fitted
+
+```
+
+The comparison between the original and the adjusted SMR maps highlights the benefits of using hierarchical Bayesian models in disease mapping. While the original SMR map shows high variability, especially in areas with smaller populations, the adjusted SMR map provides smoothed estimates, reducing the impact of random fluctuations caused by small population sizes. This stabilization allows for a more reliable interpretation of spatial risk patterns and better-informed public health interventions.
+
+# Posterior Predictive Distribution for the Risk
+
+This section focuses on estimating the **posterior predictive distribution** of the relative risk (\(\rho_i\)), defined as:
+
+\[
+p(\rho_i \mid \mathbf{y}),
+\]
+
+where \(\rho_i = \lambda_i / E_i\) represents the relative risk, \(\lambda_i\) is the true underlying rate, and \(E_i\) is the expected number of cases.
+
+By calculating \(p(\rho_i \mid \mathbf{y})\), we smooth the observed risks (\(y_i / E_i\)), accounting for uncertainty in areas with small populations or low case counts. This allows us to identify regions with genuinely elevated risks, reducing the impact of random noise and supporting informed public health decisions.
+
+```{r}
+# Plotting SMR Probability > 1
+
+# Define custom labels for the categories
+custom_labels <- c("Low Risk", "Moderate Risk", "Elevated Risk", "High Risk")
+
+colors_SMR_risk <- brewer.pal(8, "Oranges")[seq(2, 8, by  = 2)]
+
+
+# Update SMR_disc2
+SMR_disc2 <- ggplot(data = VR.sf) +
+  geom_sf(aes(fill = SMR_p1_disc), 
+          color = "gray10", # Border color
+          linewidth = 0.1) +  # Adjust border thickness
+  scale_fill_manual(
+    values = colors_SMR_risk,  # Custom palette for 4 categories
+    name = "SMR Risk Levels",                                       # Legend title
+    labels = custom_labels,                                         # Custom labels
+    drop = FALSE                                                    # Include unused levels
+  ) +
+  labs(title = "SMR P(>1) Categories") +                            # Add title
+  theme_minimal() +                                                 # Clean theme
+  theme(
+    legend.position = "bottom",                                     # Legend at bottom
+    legend.key.width = unit(0.7, "cm"),                             # Adjust legend size
+    legend.key.height = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), # Center and style the title
+    panel.grid = element_blank(),  
+    legend.title = element_blank(),                                 # Remove legend title
+    axis.text = element_blank(),                                    # Remove axis text
+    axis.ticks = element_blank()                                    # Remove axis ticks
+  ) +
+  guides(fill = guide_legend(ncol = 1))                             # Two-column legend
+
+# Display the updated plot
+print(SMR_disc2)
+
+
+
+smr_map | SMR_fitted | SMR_disc2
+```
+
+## Interactive Map of SMR
+
+Finally, we create an interactive map using `leaflet` for better exploration.
+
+```{r interactive-map, echo=TRUE}
+VR.sf <- st_transform(VR.sf, crs = 4326)  # Transform CRS for leaflet
+pal <- colorNumeric(palette = "YlOrRd", domain = VR.sf$SMR_median)
+
+leaflet(VR.sf) %>%
+  addTiles() %>%
+  addPolygons(color = "white", fillColor = ~pal(SMR_median),
+              fillOpacity = 1, weight = 0.5) %>%
+  addLegend(pal = pal, values = ~SMR_median, opacity = 0.8, title = "SMR Median")
+
+```

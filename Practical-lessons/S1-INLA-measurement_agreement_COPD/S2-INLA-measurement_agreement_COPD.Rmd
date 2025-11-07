@@ -1,0 +1,204 @@
+---
+title: "Mixed models using INLA"
+author: "Joaquín Martínez-Minaya"
+date: "`r Sys.Date()`"
+linestretch: "1.5"
+
+output:   
+  bookdown::html_document2:
+    df_print: paged
+    code_folding: show
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(INLA)
+library(dplyr)
+library(ggplot2)
+```
+
+# Introduction
+
+This document demonstrates how to fit mixed-effects models using the **Integrated Nested Laplace Approximation (INLA)** methodology. We focus on a simulated dataset inspired by a study on respiratory rate measurements for patients with Chronic Obstructive Pulmonary Disease (COPD).
+
+# Medical Context
+
+<div style="float: right; margin-right: 20px; width: 50%;">
+  ```{r, echo=FALSE, out.width='100%'}
+  knitr::include_graphics('copd.png')
+  ```
+</div>
+
+The example is based on a study investigating **agreement between devices** measuring respiratory rates in COPD patients. The goal was to assess how well various devices, including a **chest-band device**, agreed with a **gold standard device** (Oxycon mobile). Accurate measurement of respiratory rates is critical in managing **COPD**, as it provides insights into **disease severity** and **progression**.
+
+Measurements were collected across **11 different activities** performed by **21 subjects**. These activities included sitting, lying, standing, slow walking, fast walking, sweeping, lifting objects, standing and walking, climbing stairs, treadmill walking on a flat surface, and treadmill walking with a 4% slope. The activities were chosen to reflect **real-life scenarios** and to represent a wide range of physical intensities, from **sedentary** to **vigorous activities**. 
+
+Each participant performed most of the activities, but not all, due to **individual limitations** or difficulties with certain tasks, such as walking on a treadmill. This led to an **unbalanced dataset**, where the number of observations varied between activities and individuals. For example, some activities, such as sitting, had repeated measurements per participant, while others had fewer replicates.
+
+In this analysis, we account for **clustering within activities and replicates**, which can introduce dependencies in the data. The **hierarchical structure** of the dataset makes **mixed-effects models** particularly suitable, as they allow us to separate the variability attributable to activities, replicates, and devices, providing a more robust understanding of the data.
+
+# Dataset Description
+
+The dataset consists of:
+
+- `y`: The response variable, representing respiratory rate measured in **breaths per minute**.
+- `device`: Indicates the **measurement device** used. It has two levels:
+  1. **oxicon**: The gold standard device.
+  2. **chest_band**: A wearable chest-band device.
+- `replicate`: Represents the **replicated measurements** for each subject and activity. Replicates vary in number depending on the activity and subject.
+- `act`: Refers to the **activity performed** during measurement. It includes **11 levels**:
+  1. Sitting  
+  2. Lying  
+  3. Standing  
+  4. Slow walking  
+  5. Fast walking  
+  6. Sweeping  
+  7. Lifting objects  
+  8. Standing and walking  
+  9. Climbing stairs  
+  10. Treadmill (flat walking)  
+  11. Treadmill (4% slope)
+
+Below is a summary of the dataset:
+
+```{r}
+data_copd <- readxl::read_xlsx("data_copd.xlsx")
+data_copd$act <- as.factor(data_copd$act)
+data_copd$replicate <- as.factor(data_copd$replicate)
+data_copd$device <- as.factor(data_copd$device)
+data_copd$device <- relevel(data_copd$device, ref = "oxicon")
+head(data_copd)
+```
+
+# Fixed-Effects Models {.tabset}
+
+## Model 1: Device Differences Only
+
+This model includes only the fixed effect of the device. It assumes no variability across activities or replicates.
+
+```{r fixed-effects-device}
+formula_device <- y ~ 1 + device
+
+mod_device <- inla(
+  formula_device,
+  data = data_copd,
+  family = "gaussian",
+  control.fixed = list(prec = 0.01, prec.intercept = 0.01),
+  control.compute = list(dic = TRUE, waic = TRUE)
+)
+
+summary(mod_device)
+```
+
+## Model 2: Device and Activity Differences
+
+This model includes fixed effects for both the device and activity. It captures variability across different activities but assumes no clustering within replicates or activities.
+
+```{r fixed-effects-device-activity}
+formula_device_activity <- y ~ 1 + device + act
+
+mod_device_activity <- inla(
+  formula_device_activity,
+  data = data_copd,
+  family = "gaussian",
+  control.fixed = list(prec = 0.01, prec.intercept = 0.01),
+  control.compute = list(dic = TRUE, waic = TRUE)
+)
+
+summary(mod_device_activity)
+```
+
+# Mixed-Effects Model
+
+Next, we include random effects for activity and replicate to account for variability in measurements due to these factors.
+
+## Priors
+
+We use half-Cauchy priors for the precision of random effects:
+
+```{r priors}
+HC.prior <- "expression:
+  sigma = exp(-theta/2);
+  dev = 1;
+  log_dens = log(2) - log(pi) - log(dev);
+  log_dens = log_dens - log(1 + (sigma / dev)^2);
+  log_dens = log_dens - log(2) - theta / 2;
+  return(log_dens);
+"
+
+half.cauchy <- list(prec = list(prior = HC.prior))
+```
+
+## Model Specification
+
+The formula includes fixed and random effects:
+
+```{r mixed-effects-model}
+formula_mixed <- y ~ 1 + device + 
+  f(replicate, model = "iid", hyper = half.cauchy) +
+  f(act, model = "iid", hyper = half.cauchy)
+
+mod_mixed <- inla(
+  formula_mixed,
+  data = data_copd,
+  family = "gaussian",
+  control.fixed = list(prec = 0.01, prec.intercept = 0.01),
+  control.compute = list(dic = TRUE, waic = TRUE)
+)
+
+summary(mod_mixed)
+```
+
+# Comparison of Models
+
+We compare the models using DIC to evaluate the impact of including additional predictors and random effects:
+
+```{r compare-models}
+comparison_table <- data.frame(
+  Model = c("Device Only", "Device + Activity", "Mixed Effects"),
+  DIC = c(mod_device$dic$dic, mod_device_activity$dic$dic, mod_mixed$dic$dic),
+  WAIC = c(mod_device$waic$waic, mod_device_activity$waic$waic, mod_mixed$waic$waic)
+)
+
+knitr::kable(comparison_table, caption = "Model Comparison: DIC and WAIC")
+
+```
+
+# Visualization of Results
+
+Posterior distributions for the fixed effect of the device:
+
+```{r plot-fixed-effect}
+dev_post <- inla.smarginal(mod_mixed$marginals.fixed$devicechest_band)
+
+ggplot(data.frame(dev_post), aes(x, y)) +
+  geom_line() +
+  labs(title = "Posterior Distribution of Device Effect", x = "Effect Size", y = "Density")
+```
+
+# Conclusion
+
+- **Model 1: Device Differences Only**
+The first model shows relevant differences between devices in terms of mean respiratory rate. However, it does not account for variability due to activities or replicates, which could lead to biased estimates.
+
+- **Model 2: Device and Activity Differences**
+Including activities as fixed effects highlights their significant influence on respiratory rate. Intense activities (e.g., climbing stairs) result in higher rates, while sedentary activities (e.g., sitting) have lower values. Device differences remain significant after adjusting for activity.
+
+- **Model 3: Mixed Effects**
+The mixed-effects model accounts for variability due to activities and replicates, offering a more comprehensive understanding of the data. This model produces more precise estimates for device effects and reflects the hierarchical structure of the data, with credible intervals capturing greater uncertainty.
+
+
+# Exercises
+
+1. All the models shows that there is a difference between devices? 
+
+2. How would you include the replicates in the model? Include it.
+
+3. Is there any difference in agreement between both devices due to the activity? Propose a model which allows as answer this question
+
+4. Find the best model using DIC and WAIC and explains all its terms.
+
