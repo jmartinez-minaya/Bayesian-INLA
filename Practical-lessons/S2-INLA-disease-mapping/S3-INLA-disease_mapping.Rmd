@@ -228,7 +228,7 @@ These challenges underscore the importance of **contextualizing SMRs** in diseas
 
 In spatial analysis, defining neighbor relations is essential for modeling spatial dependencies. This section demonstrates how to define and visualize neighbor relationships for the municipalities in the Valencian Region.
 
-## 3.1 Creating the Neighbor Graph
+## Creating the Neighbor Graph
 
 We first define the neighbor relationships using `poly2nb` from the `spdep` package and create a graph file compatible with **INLA**.
 
@@ -247,7 +247,7 @@ H <- inla.read.graph(filename = "VR.graph")
 image(inla.graph2matrix(H), xlab = "", ylab = "")
 ```
 
-## 3.2 Visualizing Neighbor Relationships
+## Visualizing Neighbor Relationships
 
 To better understand the spatial structure of the Valencian Region, we plot the neighbors of selected municipalities using a custom function.
 

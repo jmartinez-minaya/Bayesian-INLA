@@ -13,7 +13,7 @@ library(rnaturalearth)
 
 
 ### --- 1. Reading the data --- ####
-data <- read.table("data/data_spat/spat_data.txt", sep="\t")
+data <- read.table("data_spat/spat_data.txt", sep="\t")
 str(data)
 
 
@@ -64,7 +64,7 @@ points(coords, pch = 16)
 
 ### ----- 2.3. MESH 3 --- ####
 #### may we have an shapefile of the domain
-sf1 <- readRDS("data/data_spat/square_sf.rds")
+sf1 <- readRDS("data_spat/square_sf.rds")
 plot(sf1)
 
 ### --- mesh --- ###
